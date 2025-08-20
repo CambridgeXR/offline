@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '13'; // bump this for each deploy
+const VERSION = '14'; // bump this for each deploy
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 // Precache the app shell (versioned)
@@ -38,28 +38,36 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // App shell: network-first for index with offline fallback
-  if (url.origin === location.origin && (url.pathname === '/' || url.pathname.endsWith('/index.html'))) {
+  // Don’t intercept byte-range/media or blob/filesystem requests (video/local)
+  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
+    return; // let the browser handle it
+  }
+
+  // Treat the scope root (e.g. /offline/) as the app index
+  const scopePath = new URL(self.registration.scope).pathname; // e.g. "/offline/"
+  const isScopeIndex =
+    url.origin === location.origin &&
+    (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
+
+  if (isScopeIndex) {
+    // Network-first for the index within this scope, with offline fallback
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: 'no-store' });
         const cache = await caches.open(CACHE);
-        cache.put('./', fresh.clone());
+        const rootURL = new URL(scopePath, self.location.origin).toString();
+        const indexURL = new URL(scopePath + 'index.html', self.location.origin).toString();
+        await cache.put(rootURL, fresh.clone());
+        await cache.put(indexURL, fresh.clone());
         return fresh;
       } catch {
         const cache = await caches.open(CACHE);
-        return (await cache.match('./')) ||
-               (await cache.match('./index.html')) ||
-               (await cache.match('/index.html')) ||
-               Response.error();
+        const cachedRoot  = await cache.match(new URL(scopePath, self.location.origin));
+        const cachedIndex = await cache.match(new URL(scopePath + 'index.html', self.location.origin));
+        return cachedRoot || cachedIndex || Response.error();
       }
     })());
     return;
-  }
-
-  // Don't intercept byte-range/media or blob/filesystem requests (video/local)
-  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
-    return; // allow default handling
   }
 
   // Same-origin static assets: cache-first
