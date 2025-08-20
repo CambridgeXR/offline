@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '16'; // bump this for each deploy
+const VERSION = '17'; // bump this for each deploy
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 // Precache the app shell (versioned)
@@ -38,9 +38,9 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Bypass media/byte-range, blob/filesystem URLs
+  // Bypass media/byte-range, blob/filesystem URLs (local video, etc.)
   if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
-    return; // let the browser handle local video, etc.
+    return;
   }
 
   // Treat the scope root (e.g. /offline/) as the app index
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (event) => {
     (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
 
   if (isScopeIndex) {
-    // Network-first for the index within this scope, with offline fallback
+    // Network-first for index; cache fallback
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: 'no-store' });
