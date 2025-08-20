@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=25">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=26">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=25" />
+  <link rel="manifest" href="./manifest.json?v=26" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body {
@@ -19,6 +19,7 @@
     #app { position:fixed; inset:0; overflow:hidden; z-index:0; }
     canvas { display:block; width:100%; height:100%; background:#000; }
 
+    /* Main UI (overlay only appears in VR; recenter removed here) */
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
 
@@ -28,7 +29,7 @@
       font-weight:700;
       letter-spacing:.2px;
       font-style: italic;
-      color:#22c55e; /* GREEN marker */
+      color:#9ca3af; /* GREY marker */
     }
     .title { font-style: italic; color: var(--muted); font-size:.9rem; margin-top:.25rem; }
 
@@ -51,21 +52,21 @@
       z-index:11; display:none; padding:.7rem 1rem; border-radius:12px; background:var(--panel);
       border:1px solid #263044; font-weight:600; }
 
-    /* VR overlay (Cardboard only, shown/toggled in VR mode) */
+    /* VR overlay (only shown in VR; background is click-through) */
     #vrControls { position: fixed; inset: 0; z-index: 12; display:none; pointer-events:none; }
     #vrControls .panel {
       pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
       box-shadow:0 6px 24px rgba(0,0,0,.35); backdrop-filter: blur(6px);
     }
 
-    /* IPD (top, horizontal) */
+    /* IPD (top, horizontal, 1–10 with ticks + numeric) */
     #ipdPanel { position:absolute; left:50%; top:8px; transform:translateX(-50%); padding:8px 10px; }
     #ipdLabel { font-size:12px; color:var(--muted); margin-bottom:6px; text-align:center; }
     #ipdWrap { display:flex; align-items:center; gap:10px; }
     #ipd { width:60vw; max-width:560px; }
     #ipdVal { min-width:2ch; text-align:center; font-weight:700; }
 
-    /* Zoom (right, vertical) */
+    /* Zoom (right, vertical, 1–10 with ticks + numeric) */
     #zoomPanel { position:absolute; right:8px; top:50%; transform:translateY(-50%); padding:8px 10px;
       display:flex; flex-direction:column; align-items:center; gap:6px; }
     #zoomLabel { font-size:12px; color:var(--muted); text-align:center; }
@@ -73,19 +74,17 @@
     #zoom { writing-mode: bt-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical;
       height:40vh; max-height:360px; }
 
-    /* Bottom center bar */
+    /* Bottom center action bar (Recenter) */
     #actionBar { position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
       padding:8px 10px; display:flex; gap:10px; align-items:center; justify-content:center; }
     #recenterVrBtn { width:auto; padding:.8rem 1.1rem; }
 
-    /* datalist ticks (browser decides whether to draw ticks) */
-    datalist { display:none; }
+    datalist { display:none; } /* ticks rendering is browser-dependent */
   </style>
 </head>
 <body>
   <div id="app"></div>
 
-  <!-- Main UI (no recenter here, per your request) -->
   <div class="ui">
     <div id="ui" class="ui-inner fade visible">
       <h1 class="appTitle">VR Offline</h1>
@@ -99,7 +98,7 @@
   <input id="file" type="file" accept="video/*" />
   <button id="tapPrompt" type="button">Tap to start video</button>
 
-  <!-- Overlay (only appears in VR mode) -->
+  <!-- Overlay (only visible in VR mode) -->
   <div id="vrControls">
     <div id="ipdPanel" class="panel">
       <div id="ipdLabel">IPD / Lens gap (Cardboard)</div>
@@ -133,6 +132,7 @@
   <script>
   (function(){
     const app = document.getElementById('app');
+    const ui   = document.getElementById('ui');
     const selectBtn   = document.getElementById('selectBtn');
     const vrBtn       = document.getElementById('vrBtn');
     const installBtn  = document.getElementById('installBtn');
@@ -145,14 +145,8 @@
     document.addEventListener('visibilitychange', async () => {
       if (wakeLock !== null && document.visibilityState === 'visible') { try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
     });
-    async function goFullscreenOnCanvas(canvas){
-      try {
-        if (canvas.requestFullscreen) { await canvas.requestFullscreen(); }
-        else if (canvas.webkitRequestFullscreen) { canvas.webkitRequestFullscreen(); }
-      } catch(e) {/* ignore */}
-    }
 
-    // iOS orientation permission (when required)
+    // iOS orientation permission (also needed in Chrome on iOS)
     async function ensureOrientationPermission(){
       try {
         const D = window.DeviceOrientationEvent;
@@ -164,21 +158,19 @@
       return true;
     }
 
-    // Video element
-    const video = document.createElement('video');
-    video.setAttribute('playsinline',''); video.playsInline = true;
-    video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
-
     // Scene
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = false; // Phone-only Cardboard split-screen
+    renderer.xr.enabled = false; // Cardboard only
     app.appendChild(renderer.domElement);
 
-    // 360 sphere
+    // Video -> sphere
+    const video = document.createElement('video');
+    video.setAttribute('playsinline',''); video.playsInline = true;
+    video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
     const geometry = new THREE.SphereGeometry(500, 64, 64); geometry.scale(-1, 1, 1);
     const texture = new THREE.VideoTexture(video); texture.colorSpace = THREE.SRGBColorSpace;
     const material = new THREE.MeshBasicMaterial({ map: texture });
@@ -193,18 +185,18 @@
     let mode = 'mono'; // 'mono' | 'stereo'
     const SMOOTH_ALPHA = 0.12;
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
-    let ipdGapPct = 0.0;  // 0..0.2 center gap (mapped from 1..10)
+    let ipdGapPct = 0.0;          // 0..0.2, from 1..10 slider
     camera.fov = 75; camera.updateProjectionMatrix();
     let snapNextFrame = false;
     let currentObjectURL = null;
     let overlayVisible = false;
 
-    // UI show/hide (disabled during VR so overlay taps aren't stolen)
-    const ui = document.getElementById('ui'); let uiTimer = null;
+    // UI show/hide (disabled in VR so taps go to overlay)
+    let uiTimer = null;
     function showUI(){ if (mode==='stereo') return; ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
     function globalTapHandler(e){
-      if (mode === 'stereo') return;
+      if (mode === 'stereo') return; // never steal taps in VR
       const onUI = e.target.closest('#ui');
       if (!onUI) { showUI(); if (video.src && video.paused) video.play().catch(()=>{}); }
     }
@@ -231,15 +223,11 @@
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
-
       if (currentObjectURL) { try { URL.revokeObjectURL(currentObjectURL); } catch{} currentObjectURL = null; }
       currentObjectURL = URL.createObjectURL(file);
-
       try { video.pause(); } catch {}
       video.removeAttribute('src'); video.srcObject = null; video.load();
-      video.src = currentObjectURL;
-      video.currentTime = 0;
-
+      video.src = currentObjectURL; video.currentTime = 0;
       video.muted = false;
       const p = video.play();
       if (p && typeof p.catch === 'function') {
@@ -254,7 +242,7 @@
       yawOffset = e.y; snapNextFrame = true;
     }
 
-    // Overlay elements + mapping helpers
+    // Overlay + sliders (1..10 with ticks + numeric)
     const vrControls = document.getElementById('vrControls');
     const ipdSlider  = document.getElementById('ipd');
     const ipdVal     = document.getElementById('ipdVal');
@@ -262,20 +250,17 @@
     const zoomVal    = document.getElementById('zoomVal');
     const recenterVrBtn = document.getElementById('recenterVrBtn');
 
-    function mapIpd(v /*1..10*/){ return ((v - 1) / 9) * 0.20; } // 0..0.2
-    function mapZoomToFov(v /*1..10*/){
-      const minFov = 30, maxFov = 100;
-      return maxFov - ((v - 1) / 9) * (maxFov - minFov); // 1->100 (wide), 10->30 (zoomed)
-    }
+    function mapIpd(v){ return ((v - 1) / 9) * 0.20; } // 1..10 -> 0..0.2
+    function mapZoomToFov(v){ const min=30,max=100; return max - ((v - 1) / 9) * (max - min); } // 1->100, 10->30
 
     function showOverlay(show){
       overlayVisible = !!show;
       vrControls.style.display = overlayVisible ? 'block' : 'none';
     }
-
     function toggleOverlay(ev){
       if (mode !== 'stereo') return;
       if (ev && ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
+      ev && ev.preventDefault();
       showOverlay(!overlayVisible);
     }
     renderer.domElement.addEventListener('pointerdown', toggleOverlay, { capture:true });
@@ -297,7 +282,16 @@
     zoomSlider.dispatchEvent(new Event('input'));
     ipdSlider.dispatchEvent(new Event('input'));
 
-    // Render loops
+    // Robust sizes (especially after fullscreen/orientation)
+    function forceResize(){
+      const w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', forceResize);
+
+    // RENDER
     function updateVideoTexture(){ if (video.readyState >= 2) texture.needsUpdate = true; }
     function renderMono(){
       if (controls) controls.update();
@@ -309,24 +303,25 @@
     }
     function renderStereo(){
       if (controls) controls.update();
+
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
       const target = new THREE.Quaternion().setFromEuler(e);
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
       else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
 
-      const w = renderer.domElement.width|0, h = renderer.domElement.height|0;
-      const half = w/2; const gap = (w * ipdGapPct)|0;
-      const leftW = (half - (gap/2))|0; const rightX = (half + (gap/2))|0; const rightW = (w - rightX)|0;
+      // Use drawing buffer size (most reliable across fullscreen/orientation)
+      const gl = renderer.getContext();
+      const w = gl.drawingBufferWidth|0, h = gl.drawingBufferHeight|0;
+      const half = (w/2)|0, gap = (w * ipdGapPct)|0;
+      const leftW = (half - (gap/2))|0, rightX = (half + (gap/2))|0, rightW = (w - rightX)|0;
 
       updateVideoTexture(); renderer.setScissorTest(true);
 
-      // Left eye
       renderer.setViewport(0, 0, leftW, h);
       renderer.setScissor(0, 0, leftW, h);
       camera.aspect = leftW / h; camera.updateProjectionMatrix();
       renderer.render(scene, camera);
 
-      // Right eye
       renderer.setViewport(rightX, 0, rightW, h);
       renderer.setScissor(rightX, 0, rightW, h);
       camera.aspect = rightW / h; camera.updateProjectionMatrix();
@@ -334,38 +329,35 @@
 
       renderer.setScissorTest(false);
     }
-
-    function animate(){
-      requestAnimationFrame(animate);
-      (mode === 'stereo') ? renderStereo() : renderMono();
-    }
+    function animate(){ requestAnimationFrame(animate); (mode === 'stereo') ? renderStereo() : renderMono(); }
     animate();
 
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    // Enter VR -> Cardboard only
+    // Enter VR (Cardboard only) — toughened to succeed even if some calls fail
     vrBtn.addEventListener('click', async () => {
-      // Ask for device orientation permission on iOS *during this gesture*.
+      // 1) Orientation permission & connect controls
       await ensureOrientationPermission();
-
-      // Start/refresh orientation controls after permission
       try { if (controls) { controls.connect(); } } catch(e){}
 
-      // Try canvas fullscreen (more reliable on Chrome mobile)
-      await goFullscreenOnCanvas(renderer.domElement);
+      // 2) Fullscreen on the canvas (most reliable on Chrome mobile)
+      try {
+        if (renderer.domElement.requestFullscreen) await renderer.domElement.requestFullscreen();
+        else if (renderer.domElement.webkitRequestFullscreen) renderer.domElement.webkitRequestFullscreen();
+      } catch(e){}
 
-      // Orientation lock + wakelock (optional)
-      try { await screen.orientation.lock('landscape'); } catch(e) {}
+      // 3) Best-effort orientation lock & wakelock
+      try { await screen.orientation.lock('landscape'); } catch(e){}
       await requestWakeLock();
 
-      // Enter stereo regardless of the above succeeding
+      // 4) Switch to stereo no matter what (this is the important bit)
       mode = 'stereo';
+
+      // 5) Force size updates now and after a short delay (orientation settle)
+      forceResize();
+      setTimeout(forceResize, 150);
+      setTimeout(forceResize, 350);
+
+      // 6) Show overlay briefly, then hide (tap to toggle while in VR)
       showOverlay(true);
-      // Auto-hide after a moment
       setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1200);
     });
 
@@ -373,10 +365,8 @@
     let deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
     installBtn.addEventListener('click', async () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        try { await deferredPrompt.userChoice; } finally { deferredPrompt = null; }
-      } else {
+      if (deferredPrompt) { deferredPrompt.prompt(); try { await deferredPrompt.userChoice; } finally { deferredPrompt = null; } }
+      else {
         const ua = navigator.userAgent || '';
         if (/iPhone|iPad|iPod/i.test(ua)) alert('To install: tap Share, then "Add to Home Screen".');
         else alert('To install: open the browser menu and choose "Install App" (or "Add to Home Screen").');
@@ -402,7 +392,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=25', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=26', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
