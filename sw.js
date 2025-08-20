@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '30';
+const VERSION = '31';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
