@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=29">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=30">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=29" />
+  <link rel="manifest" href="./manifest.json?v=30" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
@@ -21,7 +21,7 @@
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style:italic; color:#ffffff; } /* WHITE marker */
+      font-style:italic; color:#22c55e; } /* GREEN marker */
     .title { font-style:italic; color:var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -90,19 +90,13 @@
         <input id="ipd" type="range" min="1" max="10" step="1" value="1" list="ipdTicks" />
         <output id="ipdVal">1</output>
       </div>
-      <datalist id="ipdTicks">
-        <option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option>
-        <option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option>
-      </datalist>
+      <datalist id="ipdTicks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option><option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option></datalist>
     </div>
     <div id="zoomPanel" class="panel">
       <div id="zoomLabel">Zoom</div>
       <output id="zoomVal">1</output>
       <input id="zoom" type="range" min="1" max="10" step="1" value="1" list="zoomTicks" />
-      <datalist id="zoomTicks">
-        <option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option>
-        <option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option>
-      </datalist>
+      <datalist id="zoomTicks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option><option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option></datalist>
     </div>
     <div id="actionBar" class="panel">
       <button id="recenterVrBtn" type="button">Recenter</button>
@@ -117,6 +111,7 @@
   (function(){
     const app = document.getElementById('app');
     const ui  = document.getElementById('ui');
+
     const selectBtn   = document.getElementById('selectBtn');
     const vrBtn       = document.getElementById('vrBtn');
     const installBtn  = document.getElementById('installBtn');
@@ -127,7 +122,7 @@
     let wakeLock = null;
     async function requestWakeLock(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
 
-    // Orientation permission (iOS)
+    // iOS orientation permission (Chrome/Safari on iOS)
     async function ensureOrientationPermission(){
       try {
         const D = window.DeviceOrientationEvent;
@@ -171,7 +166,7 @@
     let currentObjectURL = null;
     let overlayVisible = false;
 
-    // Main UI show/hide (disabled in VR)
+    // UI show/hide (disabled in VR)
     let uiTimer = null;
     function showUI(){ if (mode==='stereo') return; ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
@@ -181,7 +176,6 @@
       if (!onUI) { showUI(); if (video.src && video.paused) video.play().catch(()=>{}); }
     }
     document.addEventListener('pointerdown', globalTapHandler, { capture:true, passive:true });
-    document.addEventListener('click',       globalTapHandler, { capture:true, passive:true });
     uiTimer = setTimeout(hideUI, 3000);
 
     // Ensure VR button clicks aren't intercepted
@@ -241,7 +235,6 @@
       showOverlay(!overlayVisible);
     }
     renderer.domElement.addEventListener('pointerdown', toggleOverlay, { capture:true });
-    document.addEventListener('pointerdown', toggleOverlay, { capture:true });
 
     recenterVrBtn.addEventListener('click', (e) => { e.stopPropagation(); recenter(); });
     zoomSlider.addEventListener('input', () => {
@@ -269,7 +262,9 @@
       const target = new THREE.Quaternion().setFromEuler(e);
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
       else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
-      updateVideoTexture(); renderer.setScissorTest(false); renderer.render(scene, camera);
+      updateVideoTexture();
+      renderer.setScissorTest(false);
+      renderer.render(scene, camera);
     }
     function renderStereo(){
       controls && controls.update();
@@ -279,10 +274,8 @@
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
       else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
 
-      // *** Use drawing buffer size (most reliable across devices) ***
-      const db = renderer.getDrawingBufferSize ? renderer.getDrawingBufferSize(new THREE.Vector2()) : null;
-      let w = db ? db.x|0 : (renderer.domElement.width|0);
-      let h = db ? db.y|0 : (renderer.domElement.height|0);
+      // Use the canvas internal size (this matched your earlier working build)
+      let w = renderer.domElement.width|0, h = renderer.domElement.height|0;
       if (!w || !h) {
         const size = renderer.getSize(new THREE.Vector2());
         const dpr  = renderer.getPixelRatio();
@@ -296,13 +289,16 @@
       const rightX = (half + (gap/2))|0;
       const rightW = Math.max(1, (w - rightX)|0);
 
-      updateVideoTexture(); renderer.setScissorTest(true);
+      updateVideoTexture();
+      renderer.setScissorTest(true);
 
+      // Left eye
       renderer.setViewport(0, 0, leftW, h);
       renderer.setScissor(0, 0, leftW, h);
       camera.aspect = leftW / h; camera.updateProjectionMatrix();
       renderer.render(scene, camera);
 
+      // Right eye
       renderer.setViewport(rightX, 0, rightW, h);
       renderer.setScissor(rightX, 0, rightW, h);
       camera.aspect = rightW / h; camera.updateProjectionMatrix();
@@ -317,7 +313,7 @@
     function enterVR(ev){
       if (ev){ ev.preventDefault(); ev.stopPropagation(); }
 
-      // 1) Flip to stereo **now** so next frame is split-screen
+      // 1) Flip to stereo NOW (forces split-screen next frame)
       mode = 'stereo';
       ui.classList.add('hidden');
       forceResize();
@@ -337,7 +333,7 @@
       try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
       requestWakeLock();
 
-      // 4) Extra resizes after potential fullscreen/orientation settle
+      // 4) Extra resizes after possible fullscreen/orientation settle
       setTimeout(forceResize, 120);
       setTimeout(forceResize, 320);
     }
@@ -373,7 +369,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=29', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=30', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
