@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=27">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=29">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=27" />
+  <link rel="manifest" href="./manifest.json?v=29" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
@@ -17,11 +17,11 @@
     #app { position:fixed; inset:0; overflow:hidden; z-index:0; }
     canvas { display:block; width:100%; height:100%; background:#000; }
 
-    /* Main UI (overlay only in VR; no recenter here) */
+    /* Main UI (overlay appears only in VR; no recenter here) */
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style:italic; color:#ef4444; } /* RED marker */
+      font-style:italic; color:#ffffff; } /* WHITE marker */
     .title { font-style:italic; color:var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -90,13 +90,19 @@
         <input id="ipd" type="range" min="1" max="10" step="1" value="1" list="ipdTicks" />
         <output id="ipdVal">1</output>
       </div>
-      <datalist id="ipdTicks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option><option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option></datalist>
+      <datalist id="ipdTicks">
+        <option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option>
+        <option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option>
+      </datalist>
     </div>
     <div id="zoomPanel" class="panel">
       <div id="zoomLabel">Zoom</div>
       <output id="zoomVal">1</output>
       <input id="zoom" type="range" min="1" max="10" step="1" value="1" list="zoomTicks" />
-      <datalist id="zoomTicks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option><option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option></datalist>
+      <datalist id="zoomTicks">
+        <option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option><option value="5"></option>
+        <option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option><option value="10"></option>
+      </datalist>
     </div>
     <div id="actionBar" class="panel">
       <button id="recenterVrBtn" type="button">Recenter</button>
@@ -111,7 +117,6 @@
   (function(){
     const app = document.getElementById('app');
     const ui  = document.getElementById('ui');
-
     const selectBtn   = document.getElementById('selectBtn');
     const vrBtn       = document.getElementById('vrBtn');
     const installBtn  = document.getElementById('installBtn');
@@ -121,16 +126,14 @@
     // Power helpers
     let wakeLock = null;
     async function requestWakeLock(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
-    document.addEventListener('visibilitychange', async () => {
-      if (wakeLock !== null && document.visibilityState === 'visible') { try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
-    });
 
+    // Orientation permission (iOS)
     async function ensureOrientationPermission(){
       try {
         const D = window.DeviceOrientationEvent;
         if (D && typeof D.requestPermission === 'function') {
-          const res = await D.requestPermission();
-          return res === 'granted';
+          const r = await D.requestPermission();
+          return r === 'granted';
         }
       } catch(e){}
       return true;
@@ -155,7 +158,7 @@
 
     // Orientation controls
     let controls = null;
-    try { if (THREE.DeviceOrientationControls) { controls = new THREE.DeviceOrientationControls(camera); } } catch(e){}
+    try { if (THREE.DeviceOrientationControls) { controls = new THREE.DeviceOrientationControls(camera, true); controls.connect(); } } catch(e){}
 
     // State
     let yawOffset = 0;
@@ -168,18 +171,23 @@
     let currentObjectURL = null;
     let overlayVisible = false;
 
-    // UI show/hide (disabled in VR)
+    // Main UI show/hide (disabled in VR)
     let uiTimer = null;
     function showUI(){ if (mode==='stereo') return; ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
     function globalTapHandler(e){
-      if (mode === 'stereo') return;
+      if (mode === 'stereo') return; // never steal taps in VR
       const onUI = e.target.closest('#ui');
       if (!onUI) { showUI(); if (video.src && video.paused) video.play().catch(()=>{}); }
     }
     document.addEventListener('pointerdown', globalTapHandler, { capture:true, passive:true });
     document.addEventListener('click',       globalTapHandler, { capture:true, passive:true });
     uiTimer = setTimeout(hideUI, 3000);
+
+    // Ensure VR button clicks aren't intercepted
+    ['pointerdown','click','touchstart'].forEach(evt => {
+      vrBtn.addEventListener(evt, ev => ev.stopPropagation(), { capture:true });
+    });
 
     // Tap-to-start helper
     function showTap(){ tapPrompt.style.display = 'block'; }
@@ -208,7 +216,7 @@
       }
     });
 
-    // RECENTER
+    // Recenter
     function recenter(){
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       yawOffset = e.y; snapNextFrame = true;
@@ -245,7 +253,7 @@
     });
     zoomSlider.dispatchEvent(new Event('input')); ipdSlider.dispatchEvent(new Event('input'));
 
-    // Sizing helpers
+    // Sizing
     function forceResize(){
       const w = window.innerWidth, h = window.innerHeight;
       renderer.setSize(w, h);
@@ -256,7 +264,7 @@
     // RENDER
     function updateVideoTexture(){ if (video.readyState >= 2) tex.needsUpdate = true; }
     function renderMono(){
-      if (controls) controls.update();
+      controls && controls.update();
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
       const target = new THREE.Quaternion().setFromEuler(e);
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
@@ -264,17 +272,23 @@
       updateVideoTexture(); renderer.setScissorTest(false); renderer.render(scene, camera);
     }
     function renderStereo(){
-      if (controls) controls.update();
+      controls && controls.update();
+
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
       const target = new THREE.Quaternion().setFromEuler(e);
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
       else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
 
-      // Reliable buffer size: getSize()*pixelRatio (works across fullscreen/orientation)
-      const size = renderer.getSize(new THREE.Vector2());
-      const dpr  = renderer.getPixelRatio();
-      const w = Math.max(1, (size.x * dpr) | 0);
-      const h = Math.max(1, (size.y * dpr) | 0);
+      // *** Use drawing buffer size (most reliable across devices) ***
+      const db = renderer.getDrawingBufferSize ? renderer.getDrawingBufferSize(new THREE.Vector2()) : null;
+      let w = db ? db.x|0 : (renderer.domElement.width|0);
+      let h = db ? db.y|0 : (renderer.domElement.height|0);
+      if (!w || !h) {
+        const size = renderer.getSize(new THREE.Vector2());
+        const dpr  = renderer.getPixelRatio();
+        w = Math.max(1, (size.x * dpr)|0);
+        h = Math.max(1, (size.y * dpr)|0);
+      }
 
       const half = (w/2)|0;
       const gap  = (w * ipdGapPct)|0;
@@ -299,36 +313,35 @@
     function animate(){ requestAnimationFrame(animate); (mode === 'stereo') ? renderStereo() : renderMono(); }
     animate();
 
-    // ENTER VR — bulletproof Cardboard entry
-    vrBtn.addEventListener('click', async (ev) => {
-      ev.preventDefault(); ev.stopPropagation();
+    // ENTER VR — split-screen immediately; extras in parallel
+    function enterVR(ev){
+      if (ev){ ev.preventDefault(); ev.stopPropagation(); }
 
-      // 1) Orientation permission on iOS
-      await ensureOrientationPermission();
-      try { if (controls) controls.connect(); } catch(e){}
-
-      // 2) Try fullscreen on the canvas, else on the document, else continue
-      try {
-        const c = renderer.domElement;
-        if (c.requestFullscreen)      await c.requestFullscreen();
-        else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen();
-        else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-      } catch(e){}
-
-      // 3) Best-effort orientation lock + wakelock
-      try { await screen.orientation.lock('landscape'); } catch(e){}
-      await requestWakeLock();
-
-      // 4) Go stereo no matter what; hide main UI; show overlay briefly
+      // 1) Flip to stereo **now** so next frame is split-screen
       mode = 'stereo';
-      ui.classList.add('hidden'); // keep UI out of the way in VR
-
-      // Force sizes now and shortly after (some browsers report 0 on the first frame)
-      forceResize(); setTimeout(forceResize, 120); setTimeout(forceResize, 320);
-
+      ui.classList.add('hidden');
+      forceResize();
       showOverlay(true);
       setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1200);
-    });
+
+      // 2) Ask for orientation permission & (re)connect controls
+      ensureOrientationPermission().then(() => { try { controls && controls.connect(); } catch(e){}; }).catch(()=>{});
+
+      // 3) Try fullscreen on canvas; orientation lock; wakelock (best effort)
+      try {
+        const c = renderer.domElement;
+        if (c.requestFullscreen) c.requestFullscreen();
+        else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen();
+        else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+      } catch(e){}
+      try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
+      requestWakeLock();
+
+      // 4) Extra resizes after potential fullscreen/orientation settle
+      setTimeout(forceResize, 120);
+      setTimeout(forceResize, 320);
+    }
+    vrBtn.addEventListener('click', enterVR, { passive:false });
 
     // INSTALL (Download app)
     let deferredPrompt = null;
@@ -360,7 +373,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=27', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=29', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
