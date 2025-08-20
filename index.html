@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=38">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=40">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=38" />
+  <link rel="manifest" href="./manifest.json?v=40" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
@@ -17,11 +17,10 @@
     #app { position:fixed; inset:0; overflow:hidden; z-index:0; }
     canvas { display:block; width:100%; height:100%; background:#000; }
 
-    /* Home UI */
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style:italic; color:#22c55e; } /* GREEN */
+      font-style:italic; color:#ffffff; } /* WHITE */
     .title { font-style:italic; color:var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -43,21 +42,21 @@
     #vrHud .panel { pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
       box-shadow:0 6px 24px rgba(0,0,0,.35); backdrop-filter:blur(6px); }
 
-    /* IPD (top, horizontal, 1–10) */
+    /* IPD (top) */
     #ipdPanel { position:absolute; left:50%; top:8px; transform:translateX(-50%); padding:8px 10px; }
     #ipdLabel { font-size:12px; color:var(--muted); margin-bottom:6px; text-align:center; }
     #ipdWrap { display:flex; align-items:center; gap:10px; }
     #ipd { width:60vw; max-width:560px; }
     #ipdVal { min-width:2ch; text-align:center; font-weight:700; }
 
-    /* Zoom (right, vertical, 1–10) */
+    /* Zoom (right) */
     #zoomPanel { position:absolute; right:8px; top:50%; transform:translateY(-50%); padding:8px 10px;
       display:flex; flex-direction:column; align-items:center; gap:6px; }
     #zoomLabel { font-size:12px; color:var(--muted); text-align:center; }
     #zoomVal { font-weight:700; }
     #zoom { writing-mode:bt-lr; -webkit-appearance:slider-vertical; appearance:slider-vertical; height:40vh; max-height:360px; }
 
-    /* Bottom center (Recenter) */
+    /* Bottom center */
     #actionBar { position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
       padding:8px 10px; display:flex; gap:10px; align-items:center; justify-content:center; }
     #recenterVrBtn { width:auto; padding:.8rem 1.1rem; }
@@ -104,7 +103,54 @@
 
   <!-- three.js -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/examples/js/controls/DeviceOrientationControls.js"></script>
+
+  <!-- Inline orientation controller (no CDN) -->
+  <script>
+  (function(){
+    function PhoneOrientationControls(object){
+      this.object = object;
+      this.enabled = false;
+      this.deviceOrientation = null;
+      this.screenOrientation = 0;
+      const zee = new THREE.Vector3(0,0,1);
+      const euler = new THREE.Euler();
+      const q0 = new THREE.Quaternion();
+      const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -PI/2 around X
+      const setQuat = (q, alpha, beta, gamma, orient) => {
+        euler.set(beta, alpha, -gamma, 'YXZ');
+        q.setFromEuler(euler);
+        q.multiply(q1);
+        q.multiply(q0.setFromAxisAngle(zee, -orient));
+      };
+      const onDev = (ev)=>{ this.deviceOrientation = ev; };
+      const onScr = ()=>{ this.screenOrientation =
+        (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle :
+        (typeof window.orientation === 'number' ? window.orientation : 0); };
+      this.connect = ()=>{
+        if (this.enabled) return;
+        onScr();
+        window.addEventListener('orientationchange', onScr, false);
+        window.addEventListener('deviceorientation', onDev, false);
+        this.enabled = true;
+      };
+      this.disconnect = ()=>{
+        window.removeEventListener('orientationchange', onScr, false);
+        window.removeEventListener('deviceorientation', onDev, false);
+        this.enabled = false;
+      };
+      this.update = ()=>{
+        if (!this.enabled || !this.deviceOrientation) return;
+        const d = this.deviceOrientation;
+        const alpha = d.alpha != null ? THREE.MathUtils.degToRad(d.alpha) : 0;
+        const beta  = d.beta  != null ? THREE.MathUtils.degToRad(d.beta)  : 0;
+        const gamma = d.gamma != null ? THREE.MathUtils.degToRad(d.gamma) : 0;
+        const orient= THREE.MathUtils.degToRad(this.screenOrientation || 0);
+        setQuat(this.object.quaternion, alpha, beta, gamma, orient);
+      };
+    }
+    window.PhoneOrientationControls = PhoneOrientationControls;
+  })();
+  </script>
 
   <script>
   (function(){
@@ -116,7 +162,6 @@
     const fileInput  = document.getElementById('file');
     const tapPrompt  = document.getElementById('tapPrompt');
 
-    // Power helpers
     let wakeLock = null;
     async function requestWakeLock(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){} }
     async function goFullscreen(){
@@ -134,7 +179,7 @@
       return true;
     }
 
-    // Scene
+    // Three basics
     const scene    = new THREE.Scene();
     const camera   = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
@@ -143,28 +188,28 @@
     renderer.xr.enabled = false; // Cardboard only
     app.appendChild(renderer.domElement);
 
-    // Video -> sphere
+    // Video → sphere
     const video = document.createElement('video');
-    video.setAttribute('playsinline',''); video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
+    video.setAttribute('playsinline',''); video.playsInline = true; video.loop = true; video.preload = 'metadata';
     const geom = new THREE.SphereGeometry(500, 64, 64); geom.scale(-1,1,1);
     const tex  = new THREE.VideoTexture(video); tex.colorSpace = THREE.SRGBColorSpace;
     const mat  = new THREE.MeshBasicMaterial({ map: tex });
     const sphere = new THREE.Mesh(geom, mat); scene.add(sphere);
 
-    // Orientation controls
-    let controls = null;
-    try { if (THREE.DeviceOrientationControls) { controls = new THREE.DeviceOrientationControls(camera, true); controls.connect(); } } catch(e){}
+    // Orientation
+    let controls = new PhoneOrientationControls(camera);
+    controls.connect();
 
     // State
     let yawOffset = 0;
     let mode = 'mono'; // 'mono' | 'stereo'
     const SMOOTH_ALPHA = 0.12;
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
-    let ipdGapPct = 0.0; // 0..0.2
     let snapNextFrame = false;
     let currentObjectURL = null;
+    let ipdGapPct = 0.0; // 0..0.2
 
-    // Home UI show/hide (don’t steal VR taps)
+    // UI show/hide
     let uiTimer = null;
     function showUI(){ if (mode==='stereo') return; ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
@@ -174,10 +219,9 @@
     }, { passive:true });
     uiTimer = setTimeout(hideUI, 3000);
 
-    // Buttons (VR disabled until video is playing)
+    // File selection (enable VR as soon as a file is chosen)
     selectBtn.addEventListener('click', () => {
-      showUI();
-      fileInput.value = '';
+      showUI(); fileInput.value = '';
       if (fileInput.showPicker) { try { fileInput.showPicker(); return; } catch(e){} }
       fileInput.click();
     });
@@ -189,21 +233,24 @@
       try { video.pause(); } catch{}
       video.removeAttribute('src'); video.srcObject = null; video.load();
       video.src = currentObjectURL; video.currentTime = 0;
+
+      // Try autoplay unmuted; fall back to muted
       video.muted = false;
       const p = video.play();
       if (p && typeof p.catch === 'function') {
-        p.then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; })
+        p.then(()=>{ tapPrompt.style.display='none'; })
          .catch(()=>{
             video.muted = true;
-            video.play().then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; })
+            video.play().then(()=>{ tapPrompt.style.display='none'; })
                         .catch(()=>{ tapPrompt.style.display='block'; });
          });
       }
+      // Let the user enter VR even if autoplay is blocked
+      vrBtn.disabled = false;
     });
-
     tapPrompt.addEventListener('click', () => {
       video.muted = true;
-      video.play().then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; }).catch(()=>{});
+      video.play().then(()=>{ tapPrompt.style.display='none'; }).catch(()=>{});
     });
 
     // Install (Download app)
@@ -238,26 +285,35 @@
     zoomSlider.addEventListener('input', () => { const v=+zoomSlider.value; zoomVal.textContent=String(v); camera.fov = 100 - ((v-1)/9)*(100-30); camera.updateProjectionMatrix(); });
     ipdSlider.dispatchEvent(new Event('input')); zoomSlider.dispatchEvent(new Event('input'));
 
-    // In VR: any tap on canvas toggles HUD
+    // Toggle HUD by tapping canvas in VR
     renderer.domElement.addEventListener('pointerdown', (ev) => {
       if (mode!=='stereo') return;
       if (ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
       showHud(vrHud.style.display!=='block');
     });
 
-    // Resize
-    function onResize(){
+    // Robust sizing + split helpers
+    function forceResize(){
       const w = window.innerWidth, h = window.innerHeight;
       renderer.setSize(w, h); camera.aspect = w/h; camera.updateProjectionMatrix();
     }
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
-    document.addEventListener('fullscreenchange', () => setTimeout(onResize, 120));
+    function getBufferSize(){
+      try {
+        const gl = renderer.getContext();
+        const w = gl.drawingBufferWidth|0, h = gl.drawingBufferHeight|0;
+        if (w && h) return { w, h };
+      } catch(e){}
+      return { w: renderer.domElement.width|0, h: renderer.domElement.height|0 };
+    }
+    window.addEventListener('resize', forceResize);
+    window.addEventListener('orientationchange', () => setTimeout(forceResize, 120));
+    document.addEventListener('fullscreenchange', () => setTimeout(forceResize, 120));
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible') setTimeout(forceResize, 60); });
 
-    // Render (matches your working split)
+    // Render
     function updateVideoTexture(){ if (video.readyState >= 2) tex.needsUpdate = true; }
     function renderMono(){
-      try { controls && controls.update(); } catch{}
+      try { controls.update(); } catch{}
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
       const target = new THREE.Quaternion().setFromEuler(e);
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
@@ -267,34 +323,61 @@
       renderer.render(scene, camera);
     }
     function renderStereo(){
-      try { controls && controls.update(); } catch{}
+      try { controls.update(); } catch{}
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
       const target = new THREE.Quaternion().setFromEuler(e);
       if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
       else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
 
-      const w = renderer.domElement.width|0, h = renderer.domElement.height|0;
+      const { w, h } = getBufferSize();
+      const gap = (w * ipdGapPct)|0;
+      const half = (w/2)|0;
+      const leftW = (half - (gap/2))|0;
+      const rightX = (half + (gap/2))|0;
+      const rightW = Math.max(1, w - rightX);
+
+      updateVideoTexture();
       renderer.setScissorTest(true);
-      renderer.setViewport(0, 0, w/2, h);   renderer.setScissor(0, 0, w/2, h);   renderer.render(scene, camera);
-      renderer.setViewport(w/2, 0, w/2, h); renderer.setScissor(w/2, 0, w/2, h); renderer.render(scene, camera);
+
+      renderer.setViewport(0, 0, leftW, h);
+      renderer.setScissor(0, 0, leftW, h);
+      camera.aspect = leftW / h; camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+
+      renderer.setViewport(rightX, 0, rightW, h);
+      renderer.setScissor(rightX, 0, rightW, h);
+      camera.aspect = rightW / h; camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
+
       renderer.setScissorTest(false);
     }
     function animate(){ requestAnimationFrame(animate); (mode==='stereo') ? renderStereo() : renderMono(); }
     animate();
 
-    // ENTER VR — requires video playing (like your snippet)
+    // ENTER VR — extra-stable path
     async function enterVR(){
-      await ensureOrientationPermission(); // iOS permission
+      // iOS motion permission within tap; then reconnect controls (required on iOS)
+      await ensureOrientationPermission();
+      try { controls.disconnect(); } catch {}
+      controls = new PhoneOrientationControls(camera); controls.connect(); controls.update();
+
+      // Ensure the video is playing (start muted if needed) within the same gesture
+      if (video.paused) { try { video.muted = true; await video.play(); } catch(e){} }
+
+      // Fullscreen/orientation/wakelock are best-effort
       goFullscreen();
       try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
       requestWakeLock();
 
+      // Switch to stereo and hammer a few resizes
       mode = 'stereo';
       ui.classList.add('hidden');
-      onResize();
+      forceResize();
+      [80,160,320,640].forEach(t => setTimeout(forceResize, t));
+
+      // Show HUD briefly so users learn it exists
       showHud(true);
-      [80,160,320,640].forEach(t => setTimeout(onResize, t));
-      setTimeout(()=>{ if (mode==='stereo') showHud(false); }, 1000);
+      setTimeout(()=>{ if (mode==='stereo') showHud(false); }, 1200);
     }
     vrBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); enterVR(); });
 
@@ -308,8 +391,8 @@
         currentObjectURL = URL.createObjectURL(file);
         try { video.pause(); } catch{} video.removeAttribute('src'); video.srcObject = null; video.load();
         video.src = currentObjectURL; video.muted = true;
-        video.play().then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; })
-                    .catch(()=>{ tapPrompt.style.display='block'; });
+        video.play().then(()=>{ tapPrompt.style.display='none'; }).catch(()=>{ tapPrompt.style.display='block'; });
+        vrBtn.disabled = false;
       }
     });
     window.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
@@ -322,7 +405,7 @@
       } else {
         window.addEventListener('load', async () => {
           try {
-            const reg = await navigator.serviceWorker.register('./sw.js?v=38', { scope: './' });
+            const reg = await navigator.serviceWorker.register('./sw.js?v=40', { scope: './' });
             if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
             navigator.serviceWorker.addEventListener('controllerchange', () => {
               if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
