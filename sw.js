@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '19';
+const VERSION = '20';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
@@ -38,7 +38,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
 
   // Don't touch blob/fileSystem or byte-range requests (local media)
-  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:')) {
+  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
     return;
   }
 
