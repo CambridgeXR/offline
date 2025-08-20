@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '25';
+const VERSION = '26';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
@@ -37,7 +37,7 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Bypass media/byte-range and blob/filesystem requests
+  // Bypass local media / range / blob / filesystem
   if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
     return;
   }
@@ -53,7 +53,7 @@ self.addEventListener('fetch', (event) => {
       try {
         const fresh = await fetch(req, { cache: 'no-store' });
         const cache = await caches.open(CACHE);
-        const rootURL = new URL(scopePath, self.location.origin).toString();
+        const rootURL  = new URL(scopePath, self.location.origin).toString();
         const indexURL = new URL(scopePath + 'index.html', self.location.origin).toString();
         await cache.put(rootURL, fresh.clone());
         await cache.put(indexURL, fresh.clone());
@@ -81,7 +81,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CDN: stale-while-revalidate
+  // CDN: stale-while-revalidate (e.g., jsDelivr)
   if (url.hostname.endsWith('cdn.jsdelivr.net')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
