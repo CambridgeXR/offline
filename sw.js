@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '26';
+const VERSION = '27';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
@@ -43,7 +43,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Treat the scope root (e.g. /offline/) as the app index
-  const scopePath = new URL(self.registration.scope).pathname; // e.g. "/offline/"
+  const scopePath = new URL(self.registration.scope).pathname; // e.g., "/offline/"
   const isScopeIndex =
     url.origin === location.origin &&
     (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
@@ -81,7 +81,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CDN: stale-while-revalidate (e.g., jsDelivr)
+  // CDN: stale-while-revalidate
   if (url.hostname.endsWith('cdn.jsdelivr.net')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
