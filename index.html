@@ -11,73 +11,50 @@
   <link rel="manifest" href="./manifest.json?v=13" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
-    html,body {
-      height:100%; margin:0; background:var(--bg); color:var(--fg);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
-    }
+    html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
     #app, canvas { width:100%; height:100%; display:block; background:#000; }
-    .ui {
-      position: fixed; inset: 0; display: grid; place-items: center;
-      z-index: 10;
-    }
-    .ui-inner {
-      display:flex; flex-direction:column; align-items:center; gap:12px;
+
+    .ui { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10; }
+    .ui-inner { display:flex; flex-direction:column; align-items:center; gap:12px;
       padding:16px 18px; border-radius:14px; background:var(--panel); backdrop-filter: blur(6px);
-      box-shadow: 0 6px 24px rgba(0,0,0,.35);
-      max-width:min(92vw, 520px);
-    }
+      box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width:min(92vw, 520px); }
     .fade { opacity:0; transform: translateY(6px); transition:opacity .25s ease, transform .25s ease; }
     .fade.visible { opacity:1; transform: translateY(0); }
     h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: .2px; }
     .appTitle, .title { font-style: italic; }
     .title { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    button {
-      -webkit-tap-highlight-color: transparent;
-      padding:10px 14px; border-radius:10px; border:1px solid #263044; background:#151b29; color:var(--fg);
-      font-size: 14px; font-weight: 600; letter-spacing: .2px; cursor: pointer; min-width: 200px;
-    }
-    button[disabled] { opacity: .5; cursor: not-allowed; }
-    #recenterBtn { min-width: 200px; }
+    button { -webkit-tap-highlight-color: transparent; padding:10px 14px; border-radius:10px;
+      border:1px solid #263044; background:#151b29; color:var(--fg); font-size:14px; font-weight:600;
+      letter-spacing:.2px; cursor:pointer; min-width:200px; }
+    button[disabled] { opacity:.5; cursor:not-allowed; }
+    #recenterBtn { min-width:200px; }
 
-    /* Video kept in DOM (hidden) for autoplay policies */
-    #player { position: fixed; left: -10000px; top: -10000px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    /* Hidden video stays in DOM for iOS autoplay policies */
+    #player { position: fixed; left:-10000px; top:-10000px; width:1px; height:1px; opacity:0; pointer-events:none; }
 
-    /* File input: invisible (not display:none) for programmatic open on Android */
+    /* File input: invisible (not display:none) so we can .click() it */
     #file { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
 
     /* Tap-to-play prompt (only shown if autoplay is blocked) */
-    #tapPrompt {
-      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
-      z-index: 11; padding: 10px 14px; border-radius: 12px;
-      background: var(--panel); border: 1px solid #263044; color: var(--fg);
-      font-weight: 600; display: none;
-    }
+    #tapPrompt { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 11;
+      padding:10px 14px; border-radius:12px; background:var(--panel); border:1px solid #263044; color:var(--fg);
+      font-weight:600; display:none; }
 
     /* VR Controls overlay (shown on tap while in VR) */
-    #vrControls {
-      position: fixed; inset: 0; pointer-events: none; z-index: 12; display: none;
-    }
-    #vrControls .panel {
-      pointer-events: auto;
-      background: var(--panel); border: 1px solid #263044; border-radius: 12px;
-      box-shadow: 0 6px 24px rgba(0,0,0,.35);
-      backdrop-filter: blur(6px);
-    }
+    #vrControls { position: fixed; inset: 0; pointer-events: none; z-index: 12; display:none; }
+    #vrControls .panel { pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.35); backdrop-filter: blur(6px); }
     /* Top horizontal (IPD) */
-    #ipdPanel { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); padding: 8px 10px; }
-    #ipdLabel { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-align:center; }
-    #ipd { width: 60vw; max-width: 560px; }
-
+    #ipdPanel { position:absolute; left:50%; top:8px; transform:translateX(-50%); padding:8px 10px; }
+    #ipdLabel { font-size:12px; color:var(--muted); margin-bottom:6px; text-align:center; }
+    #ipd { width:60vw; max-width:560px; }
     /* Right vertical (Zoom) */
-    #zoomPanel {
-      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-      padding: 8px 10px; display:flex; flex-direction:column; align-items:center; gap:6px;
-    }
-    #zoomLabel { font-size: 12px; color: var(--muted); }
-    #zoom {
-      writing-mode: bt-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical;
-      height: 40vh; max-height: 360px;
-    }
+    #zoomPanel { position:absolute; right:8px; top:50%; transform:translateY(-50%); padding:8px 10px;
+      display:flex; flex-direction:column; align-items:center; gap:6px; }
+    #zoomLabel { font-size:12px; color:var(--muted); }
+    #zoom { writing-mode: bt-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical;
+      height:40vh; max-height:360px; }
   </style>
 </head>
 <body>
@@ -98,8 +75,6 @@
   <!-- Hidden video + file input -->
   <video id="player" playsinline webkit-playsinline muted loop controls></video>
   <input id="file" type="file" accept="video/*" />
-
-  <!-- Tap to start (if autoplay blocked) -->
   <button id="tapPrompt">Tap to start video</button>
 
   <!-- VR overlays (shown in VR on tap) -->
@@ -128,15 +103,14 @@
     const installBtn = document.getElementById('installBtn');
     const fileInput = document.getElementById('file');
     const tapPrompt = document.getElementById('tapPrompt');
-
     const vrControls = document.getElementById('vrControls');
     const ipdSlider = document.getElementById('ipd');
-    const ipdLabel = document.getElementById('ipdLabel');
-    const zoomSlider = document.getElementById('zoom');
+    const ipdLabel  = document.getElementById('ipdLabel');
+    const zoomSlider= document.getElementById('zoom');
 
     const video = document.getElementById('player');
     video.muted = true; video.playsInline = true;
-    video.setAttribute('muted', ''); video.setAttribute('playsinline', ''); video.setAttribute('webkit-playsinline','');
+    video.setAttribute('muted',''); video.setAttribute('playsinline',''); video.setAttribute('webkit-playsinline','');
 
     // Scene
     const scene = new THREE.Scene();
@@ -161,7 +135,6 @@
     const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
     const sphere = new THREE.Mesh(geometry, material);
     scene.add(sphere);
-
     scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
     // Device orientation (Cardboard/mono fallback)
@@ -179,88 +152,48 @@
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
     let currentObjectURL = null;
 
-    // Stereo (Cardboard) parameters
-    // ipdGapPct: 0..0.2 (0..20 slider). This is the central gap % of screen width.
-    let ipdGapPct = 0.0;
+    // Stereo (Cardboard) params
+    let ipdGapPct = 0.0;            // 0..0.2 screen width (slider 0..20)
+    camera.fov = 75; camera.updateProjectionMatrix(); // zoom slider controls this
 
-    // Zoom (Cardboard): camera FOV 30..100 (slider). Smaller FOV = more zoom.
-    camera.fov = 75; camera.updateProjectionMatrix();
+    /* -------------------- Tap-to-play helpers -------------------- */
+    function showTapPrompt(){ tapPrompt.style.display = 'block'; }
+    function hideTapPrompt(){ tapPrompt.style.display = 'none'; }
+    tapPrompt.addEventListener('click', () => { video.play().then(hideTapPrompt).catch(()=>{}); });
 
-    /* ----------------------- Robust video handling ----------------------- */
-    function showTapPrompt() { tapPrompt.style.display = 'block'; }
-    function hideTapPrompt() { tapPrompt.style.display = 'none'; }
-
-    tapPrompt.addEventListener('click', () => {
-      video.play().then(hideTapPrompt).catch(()=>{});
-    });
-
-    function armUserGesturePlay() {
-      const tryPlay = () => {
-        video.play().then(hideTapPrompt).catch(()=>{});
-        document.removeEventListener('pointerdown', tryPlay);
-        document.removeEventListener('touchend', tryPlay);
-        document.removeEventListener('keydown', tryPlay);
-      };
-      document.addEventListener('pointerdown', tryPlay, { once: true });
-      document.addEventListener('touchend', tryPlay,  { once: true });
-      document.addEventListener('keydown', tryPlay,   { once: true });
-    }
-
-    function waitForMeta() {
-      return new Promise((resolve) => {
-        if (video.readyState >= 1) return resolve(); // HAVE_METADATA
-        const on = () => { video.removeEventListener('loadedmetadata', on); resolve(); };
-        video.addEventListener('loadedmetadata', on);
-        try { video.load(); } catch {}
-      });
-    }
-
-    function waitForCanPlay() {
-      return new Promise((resolve) => {
-        if (video.readyState >= 3) return resolve(); // HAVE_FUTURE_DATA
-        const on = () => { video.removeEventListener('canplay', on); resolve(); };
-        video.addEventListener('canplay', on);
-      });
-    }
-
-    video.addEventListener('playing', () => { texture.needsUpdate = true; });
-    video.addEventListener('loadeddata', () => { texture.needsUpdate = true; });
-    video.addEventListener('error', () => { console.warn('Video error', video.error); });
-
-    async function loadLocalFile(file){
+    /* ------------------- FILE PICKER: key change ------------------
+       Do everything synchronously inside the 'change' event so the
+       play() call is within the user gesture and isn’t blocked.
+    ---------------------------------------------------------------- */
+    selectBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
       if (!file) return;
-      // Re-enable selecting the same file again later
+
+      // Allow re-picking the same file later
       fileInput.value = '';
 
+      // Reset video fully, revoke old URL
+      try { video.pause(); } catch {}
       if (currentObjectURL) { URL.revokeObjectURL(currentObjectURL); currentObjectURL = null; }
+      video.removeAttribute('src'); video.srcObject = null; video.load();
+
+      // New object URL
       currentObjectURL = URL.createObjectURL(file);
+      video.src = currentObjectURL;
+      video.currentTime = 0;
 
-      try {
-        video.srcObject = null;
-        video.src = currentObjectURL;
-        await waitForMeta();
-        // Enable VR ASAP once we know it’s a valid media file
-        enableVRButton();
+      // Enable VR ASAP (we have a media file)
+      enableVRButton();
 
-        // Try to start playback; if blocked, show tap prompt and arm gesture
-        try {
-          await video.play();
-          hideTapPrompt();
-        } catch {
-          showTapPrompt();
-          armUserGesturePlay();
-        }
-      } catch (e) {
-        console.warn('Could not load/play video', e);
-        showTapPrompt();
-        armUserGesturePlay();
+      // Try to start playback *right here* (still in user gesture)
+      const attempt = video.play();
+      if (attempt && typeof attempt.catch === 'function') {
+        attempt.then(hideTapPrompt).catch(() => { showTapPrompt(); });
       }
-    }
+    });
 
-    selectBtn.addEventListener('click', () => { fileInput.click(); });
-    fileInput.addEventListener('change', () => loadLocalFile(fileInput.files && fileInput.files[0]));
-
-    /* ----------------------- Recenter (WebXR-safe) ----------------------- */
+    /* ---------------------- Recenter (WebXR) --------------------- */
     function recenter(){
       if (mode === 'webxr') {
         const refSpace = renderer.xr.getReferenceSpace && renderer.xr.getReferenceSpace();
@@ -278,20 +211,20 @@
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       yawOffset = e.y;
     }
-    recenterBtn.addEventListener('click', () => { recenter(); });
+    recenterBtn.addEventListener('click', recenter);
 
-    /* ----------------------- VR controls overlays ------------------------ */
-    function toggleVRControls() {
+    /* --------------------- VR controls overlays ------------------ */
+    function toggleVRControls(ev) {
       if (mode === 'mono') return;
+      // Don’t toggle if you clicked inside a panel (so sliders remain usable)
+      if (ev && ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
       vrControls.style.display = (vrControls.style.display === 'none' || vrControls.style.display === '') ? 'block' : 'none';
-      // Disable IPD in WebXR (headset controls IPD)
       const disableIPD = (mode === 'webxr');
       ipdSlider.disabled = disableIPD;
       ipdLabel.textContent = disableIPD ? 'IPD / Lens gap (controlled by headset)' : 'IPD / Lens gap (Cardboard)';
     }
-
-    // Show/hide sliders when user taps while in VR
-    app.addEventListener('pointerdown', () => { toggleVRControls(); });
+    // Only toggle when tapping on the canvas itself
+    renderer.domElement.addEventListener('pointerdown', toggleVRControls);
 
     // Zoom (Cardboard only – adjusts camera FOV)
     zoomSlider.addEventListener('input', () => {
@@ -305,8 +238,14 @@
       ipdGapPct = Math.min(0.2, Math.max(0, v / 100)); // 0..0.2 of screen width
     });
 
-    /* ---------------------------- Rendering ------------------------------ */
+    /* ------------------------- Rendering ------------------------- */
+    function updateVideoTextureIfReady(){
+      // Keep the texture fresh; avoids relying on sporadic events
+      if (video.readyState >= 2) texture.needsUpdate = true; // HAVE_CURRENT_DATA
+    }
+
     function renderMono(){
+      updateVideoTextureIfReady();
       if (controls) controls.update();
       const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       euler.y -= yawOffset;
@@ -314,7 +253,6 @@
       smoothedQuat.slerp(targetQuat, SMOOTH_ALPHA);
       camera.quaternion.copy(smoothedQuat);
 
-      // Fullscreen render
       camera.aspect = renderer.domElement.width / renderer.domElement.height;
       camera.updateProjectionMatrix();
       renderer.setScissorTest(false);
@@ -322,6 +260,7 @@
     }
 
     function renderStereo(){
+      updateVideoTextureIfReady();
       if (controls) controls.update();
       const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       euler.y -= yawOffset;
@@ -332,9 +271,7 @@
       const w = renderer.domElement.width | 0, h = renderer.domElement.height | 0;
       const half = w / 2;
       const gap = (w * ipdGapPct) | 0; // central gap in px
-
-      // Left viewport
-      const leftW = (half - (gap / 2)) | 0;
+      const leftW  = (half - (gap / 2)) | 0;
       const rightX = (half + (gap / 2)) | 0;
       const rightW = (w - rightX) | 0;
 
@@ -355,43 +292,40 @@
       renderer.setScissorTest(false);
     }
 
-    const monoLoop = () => renderMono();
+    const monoLoop   = () => renderMono();
     const stereoLoop = () => renderStereo();
-    const xrLoop = () => renderer.render(scene, camera);
+    const xrLoop     = () => { updateVideoTextureIfReady(); renderer.render(scene, camera); };
 
-    /* ------------------------------ VR entry ----------------------------- */
+    /* --------------------------- VR entry ------------------------ */
     function enableVRButton(){ vrBtn.disabled = false; }
 
     async function goFullscreen(){ try { if (!document.fullscreenElement) await app.requestFullscreen(); } catch {} }
-    async function requestWakeLock(){
-      try { if ('wakeLock' in navigator) { const lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', ()=>{}); } } catch {}
-    }
+    async function requestWakeLock(){ try { if ('wakeLock' in navigator) { const lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', ()=>{}); } } catch {} }
 
     async function enterCardboard(){
       await goFullscreen();
       try { await screen.orientation.lock('landscape'); } catch {}
       await requestWakeLock();
-      video.play().catch(()=>{ showTapPrompt(); armUserGesturePlay(); });
+      // If playback didn’t start yet, nudge with prompt
+      video.play().then(hideTapPrompt).catch(()=>{ showTapPrompt(); });
       mode = 'stereo';
       renderer.setAnimationLoop(stereoLoop);
-      // Show VR controls briefly the first time
       vrControls.style.display = 'block';
-      setTimeout(()=>{ if (mode==='stereo') vrControls.style.display='none'; }, 1500);
+      setTimeout(()=>{ if (mode==='stereo') vrControls.style.display='none'; }, 1200);
     }
 
     async function enterWebXR(){
       try {
         const supported = await (navigator.xr && navigator.xr.isSessionSupported ? navigator.xr.isSessionSupported('immersive-vr') : Promise.resolve(false));
         if (!supported) return false;
-        video.play().catch(()=>{ showTapPrompt(); armUserGesturePlay(); });
+        video.play().then(hideTapPrompt).catch(()=>{ showTapPrompt(); });
         const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor','bounded-floor'] });
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
         renderer.setAnimationLoop(xrLoop);
         mode = 'webxr';
-        // Show controls briefly (IPD disabled in WebXR)
         vrControls.style.display = 'block';
-        setTimeout(()=>{ if (mode==='webxr') vrControls.style.display='none'; }, 1500);
+        setTimeout(()=>{ if (mode==='webxr') vrControls.style.display='none'; }, 1200);
         return true;
       } catch (e) { return false; }
     }
@@ -402,7 +336,7 @@
     }
     vrBtn.addEventListener('click', enterVR);
 
-    /* ------------------------------ UI misc ------------------------------ */
+    /* ----------------------------- Misc -------------------------- */
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -419,7 +353,7 @@
       }
     }, { once: true });
 
-    // PWA install flow (unchanged)
+    // PWA install (unchanged)
     let deferredPrompt = null;
     let autoPrompted = false;
     window.addEventListener('beforeinstallprompt', (e) => {
