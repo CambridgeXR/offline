@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=36">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=38">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=36" />
+  <link rel="manifest" href="./manifest.json?v=38" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
@@ -21,7 +21,7 @@
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style:italic; color:#ffffff; } /* WHITE */
+      font-style:italic; color:#22c55e; } /* GREEN */
     .title { font-style:italic; color:var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -38,9 +38,9 @@
     #tapPrompt { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:11;
       display:none; padding:.7rem 1rem; border-radius:12px; background:var(--panel); border:1px solid #263044; font-weight:600; }
 
-    /* VR overlay (only in VR; click-through background) */
-    #vrControls { position:fixed; inset:0; z-index:12; display:none; pointer-events:none; }
-    #vrControls .panel { pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
+    /* VR HUD (only in VR) */
+    #vrHud { position:fixed; inset:0; z-index:12; display:none; pointer-events:none; }
+    #vrHud .panel { pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
       box-shadow:0 6px 24px rgba(0,0,0,.35); backdrop-filter:blur(6px); }
 
     /* IPD (top, horizontal, 1–10) */
@@ -72,7 +72,7 @@
     <div id="ui" class="ui-inner fade visible">
       <h1 class="appTitle">VR Offline</h1>
       <button id="selectBtn" type="button">Select simulation</button>
-      <button id="vrBtn" type="button">Enter VR</button>
+      <button id="vrBtn" type="button" disabled>Enter VR</button>
       <button id="installBtn" type="button">Download app</button>
       <div class="title">Brought to you by Cambridge XR</div>
     </div>
@@ -81,8 +81,8 @@
   <input id="file" type="file" accept="video/*" />
   <button id="tapPrompt" type="button">Tap to start video</button>
 
-  <!-- VR overlay (only in VR) -->
-  <div id="vrControls">
+  <!-- VR HUD (visible only in VR) -->
+  <div id="vrHud">
     <div id="ipdPanel" class="panel">
       <div id="ipdLabel">IPD / Lens gap (Cardboard)</div>
       <div id="ipdWrap">
@@ -145,7 +145,7 @@
 
     // Video -> sphere
     const video = document.createElement('video');
-    video.setAttribute('playsinline',''); video.playsInline = true; video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
+    video.setAttribute('playsinline',''); video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
     const geom = new THREE.SphereGeometry(500, 64, 64); geom.scale(-1,1,1);
     const tex  = new THREE.VideoTexture(video); tex.colorSpace = THREE.SRGBColorSpace;
     const mat  = new THREE.MeshBasicMaterial({ map: tex });
@@ -164,7 +164,7 @@
     let snapNextFrame = false;
     let currentObjectURL = null;
 
-    // Home UI show/hide (no stealing VR taps)
+    // Home UI show/hide (don’t steal VR taps)
     let uiTimer = null;
     function showUI(){ if (mode==='stereo') return; ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
@@ -174,7 +174,7 @@
     }, { passive:true });
     uiTimer = setTimeout(hideUI, 3000);
 
-    // Buttons
+    // Buttons (VR disabled until video is playing)
     selectBtn.addEventListener('click', () => {
       showUI();
       fileInput.value = '';
@@ -192,14 +192,21 @@
       video.muted = false;
       const p = video.play();
       if (p && typeof p.catch === 'function') {
-        p.then(()=>{ tapPrompt.style.display='none'; }).catch(()=>{
-          video.muted = true;
-          video.play().then(()=>{ tapPrompt.style.display='none'; }).catch(()=>{ tapPrompt.style.display='block'; });
-        });
+        p.then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; })
+         .catch(()=>{
+            video.muted = true;
+            video.play().then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; })
+                        .catch(()=>{ tapPrompt.style.display='block'; });
+         });
       }
     });
 
-    // PWA install
+    tapPrompt.addEventListener('click', () => {
+      video.muted = true;
+      video.play().then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; }).catch(()=>{});
+    });
+
+    // Install (Download app)
     let deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
     installBtn.addEventListener('click', async () => {
@@ -211,43 +218,43 @@
       }
     });
 
-    // Recenter
+    // Recenter (new yaw anchor)
     function recenter(){
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       yawOffset = e.y; snapNextFrame = true;
     }
 
-    // VR overlay (only in VR)
-    const vrControls = document.getElementById('vrControls');
+    // VR HUD (only in VR)
+    const vrHud = document.getElementById('vrHud');
     const recenterVrBtn = document.getElementById('recenterVrBtn');
     const ipdSlider = document.getElementById('ipd');
     const ipdVal = document.getElementById('ipdVal');
     const zoomSlider = document.getElementById('zoom');
     const zoomVal = document.getElementById('zoomVal');
 
-    function showOverlay(show){ vrControls.style.display = show ? 'block' : 'none'; }
+    function showHud(show){ vrHud.style.display = show ? 'block' : 'none'; }
     recenterVrBtn.addEventListener('click', (e) => { e.stopPropagation(); recenter(); });
     ipdSlider.addEventListener('input', () => { const v=+ipdSlider.value; ipdVal.textContent=String(v); ipdGapPct=((v-1)/9)*0.20; });
     zoomSlider.addEventListener('input', () => { const v=+zoomSlider.value; zoomVal.textContent=String(v); camera.fov = 100 - ((v-1)/9)*(100-30); camera.updateProjectionMatrix(); });
     ipdSlider.dispatchEvent(new Event('input')); zoomSlider.dispatchEvent(new Event('input'));
 
-    // Only the canvas toggles overlay in VR
+    // In VR: any tap on canvas toggles HUD
     renderer.domElement.addEventListener('pointerdown', (ev) => {
       if (mode!=='stereo') return;
       if (ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
-      showOverlay(vrControls.style.display!=='block');
+      showHud(vrHud.style.display!=='block');
     });
 
-    // Sizing helpers
-    function forceResize(){
+    // Resize
+    function onResize(){
       const w = window.innerWidth, h = window.innerHeight;
       renderer.setSize(w, h); camera.aspect = w/h; camera.updateProjectionMatrix();
     }
-    window.addEventListener('resize', forceResize);
-    window.addEventListener('orientationchange', () => setTimeout(forceResize, 120));
-    document.addEventListener('fullscreenchange', () => setTimeout(forceResize, 120));
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
+    document.addEventListener('fullscreenchange', () => setTimeout(onResize, 120));
 
-    // Render (split uses canvas internal size just like your working snippet)
+    // Render (matches your working split)
     function updateVideoTexture(){ if (video.readyState >= 2) tex.needsUpdate = true; }
     function renderMono(){
       try { controls && controls.update(); } catch{}
@@ -259,7 +266,6 @@
       renderer.setScissorTest(false);
       renderer.render(scene, camera);
     }
-
     function renderStereo(){
       try { controls && controls.update(); } catch{}
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
@@ -273,23 +279,22 @@
       renderer.setViewport(w/2, 0, w/2, h); renderer.setScissor(w/2, 0, w/2, h); renderer.render(scene, camera);
       renderer.setScissorTest(false);
     }
-
     function animate(){ requestAnimationFrame(animate); (mode==='stereo') ? renderStereo() : renderMono(); }
     animate();
 
-    // ENTER VR — Cardboard only, Android/iOS supported
+    // ENTER VR — requires video playing (like your snippet)
     async function enterVR(){
-      await ensureOrientationPermission();     // iOS: shows permission sheet inside gesture; Android: no-op
-      goFullscreen();                          // best-effort
+      await ensureOrientationPermission(); // iOS permission
+      goFullscreen();
       try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
       requestWakeLock();
 
-      mode = 'stereo';                         // split next frame
+      mode = 'stereo';
       ui.classList.add('hidden');
-      forceResize();
-      showOverlay(true);
-      [80,160,320,640].forEach(t => setTimeout(forceResize, t));
-      setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1000);
+      onResize();
+      showHud(true);
+      [80,160,320,640].forEach(t => setTimeout(onResize, t));
+      setTimeout(()=>{ if (mode==='stereo') showHud(false); }, 1000);
     }
     vrBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); enterVR(); });
 
@@ -303,7 +308,8 @@
         currentObjectURL = URL.createObjectURL(file);
         try { video.pause(); } catch{} video.removeAttribute('src'); video.srcObject = null; video.load();
         video.src = currentObjectURL; video.muted = true;
-        video.play().then(()=>{ tapPrompt.style.display='none'; }).catch(()=>{ tapPrompt.style.display='block'; });
+        video.play().then(()=>{ tapPrompt.style.display='none'; vrBtn.disabled=false; })
+                    .catch(()=>{ tapPrompt.style.display='block'; });
       }
     });
     window.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
@@ -316,7 +322,7 @@
       } else {
         window.addEventListener('load', async () => {
           try {
-            const reg = await navigator.serviceWorker.register('./sw.js?v=36', { scope: './' });
+            const reg = await navigator.serviceWorker.register('./sw.js?v=38', { scope: './' });
             if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
             navigator.serviceWorker.addEventListener('controllerchange', () => {
               if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
