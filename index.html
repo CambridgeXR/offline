@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=34">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=36">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=34" />
+  <link rel="manifest" href="./manifest.json?v=36" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
@@ -21,7 +21,7 @@
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style:italic; color:#a855f7; } /* PURPLE */
+      font-style:italic; color:#ffffff; } /* WHITE */
     .title { font-style:italic; color:var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -160,11 +160,11 @@
     let mode = 'mono'; // 'mono' | 'stereo'
     const SMOOTH_ALPHA = 0.12;
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
-    let ipdGapPct = 0.0; // 0..0.2 (slider 1..10)
+    let ipdGapPct = 0.0; // 0..0.2
     let snapNextFrame = false;
     let currentObjectURL = null;
 
-    // Home UI show/hide (don’t steal VR taps)
+    // Home UI show/hide (no stealing VR taps)
     let uiTimer = null;
     function showUI(){ if (mode==='stereo') return; ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
@@ -199,7 +199,7 @@
       }
     });
 
-    // Download app / PWA
+    // PWA install
     let deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
     installBtn.addEventListener('click', async () => {
@@ -238,7 +238,7 @@
       showOverlay(vrControls.style.display!=='block');
     });
 
-    // Size helpers
+    // Sizing helpers
     function forceResize(){
       const w = window.innerWidth, h = window.innerHeight;
       renderer.setSize(w, h); camera.aspect = w/h; camera.updateProjectionMatrix();
@@ -247,82 +247,49 @@
     window.addEventListener('orientationchange', () => setTimeout(forceResize, 120));
     document.addEventListener('fullscreenchange', () => setTimeout(forceResize, 120));
 
-    // Buffer size helper
-    function getBufferSize(){
-      try {
-        const gl = renderer.getContext();
-        let w = gl.drawingBufferWidth|0, h = gl.drawingBufferHeight|0;
-        if (w && h) return {w, h};
-      } catch(e){}
-      const sz = renderer.getSize(new THREE.Vector2());
-      const dpr = renderer.getPixelRatio();
-      return { w: Math.max(1,(sz.x*dpr)|0), h: Math.max(1,(sz.y*dpr)|0) };
-    }
-
-    // Render
+    // Render (split uses canvas internal size just like your working snippet)
     function updateVideoTexture(){ if (video.readyState >= 2) tex.needsUpdate = true; }
-    const targetQ = new THREE.Quaternion();
     function renderMono(){
       try { controls && controls.update(); } catch{}
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
-      targetQ.setFromEuler(e);
-      if (snapNextFrame){ camera.quaternion.copy(targetQ); smoothedQuat.copy(targetQ); snapNextFrame=false; }
-      else { smoothedQuat.slerp(targetQ, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
+      const target = new THREE.Quaternion().setFromEuler(e);
+      if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
+      else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
       updateVideoTexture();
       renderer.setScissorTest(false);
       renderer.render(scene, camera);
     }
+
     function renderStereo(){
       try { controls && controls.update(); } catch{}
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ'); e.y -= yawOffset;
-      targetQ.setFromEuler(e);
-      if (snapNextFrame){ camera.quaternion.copy(targetQ); smoothedQuat.copy(targetQ); snapNextFrame=false; }
-      else { smoothedQuat.slerp(targetQ, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
+      const target = new THREE.Quaternion().setFromEuler(e);
+      if (snapNextFrame){ camera.quaternion.copy(target); smoothedQuat.copy(target); snapNextFrame=false; }
+      else { smoothedQuat.slerp(target, SMOOTH_ALPHA); camera.quaternion.copy(smoothedQuat); }
 
-      const {w, h} = getBufferSize();
-      const half = (w/2)|0;
-      const gap  = (w * ipdGapPct)|0;
-      const leftW = (half - (gap/2))|0;
-      const rightX = (half + (gap/2))|0;
-      const rightW = Math.max(1, (w - rightX)|0);
-
-      updateVideoTexture();
+      const w = renderer.domElement.width|0, h = renderer.domElement.height|0;
       renderer.setScissorTest(true);
-
-      renderer.setViewport(0, 0, leftW, h);
-      renderer.setScissor(0, 0, leftW, h);
-      camera.aspect = leftW / h; camera.updateProjectionMatrix();
-      renderer.render(scene, camera);
-
-      renderer.setViewport(rightX, 0, rightW, h);
-      renderer.setScissor(rightX, 0, rightW, h);
-      camera.aspect = rightW / h; camera.updateProjectionMatrix();
-      renderer.render(scene, camera);
-
+      renderer.setViewport(0, 0, w/2, h);   renderer.setScissor(0, 0, w/2, h);   renderer.render(scene, camera);
+      renderer.setViewport(w/2, 0, w/2, h); renderer.setScissor(w/2, 0, w/2, h); renderer.render(scene, camera);
       renderer.setScissorTest(false);
     }
+
     function animate(){ requestAnimationFrame(animate); (mode==='stereo') ? renderStereo() : renderMono(); }
     animate();
 
-    // ENTER VR — Cardboard only, with iOS motion permission
+    // ENTER VR — Cardboard only, Android/iOS supported
     async function enterVR(){
-      // 1) Ask for motion permission on iOS inside this gesture
-      await ensureOrientationPermission();
+      await ensureOrientationPermission();     // iOS: shows permission sheet inside gesture; Android: no-op
+      goFullscreen();                          // best-effort
+      try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
+      requestWakeLock();
 
-      // 2) Fullscreen / orientation / wakelock (best effort, but not required for split)
-      await goFullscreen();
-      try { await screen.orientation.lock('landscape'); } catch(e){}
-      await requestWakeLock();
-
-      // 3) Flip to stereo and size
-      mode = 'stereo';
+      mode = 'stereo';                         // split next frame
       ui.classList.add('hidden');
       forceResize();
       showOverlay(true);
+      [80,160,320,640].forEach(t => setTimeout(forceResize, t));
       setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1000);
-
-      // 4) Extra resizes to catch late changes
-      [80, 160, 320, 640].forEach(t => setTimeout(forceResize, t));
     }
     vrBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); enterVR(); });
 
@@ -341,17 +308,22 @@
     });
     window.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
 
-    // Service worker
+    // Service worker (allow disabling via ?nosw=1)
+    const disableSW = /(^|&)nosw=1(&|$)/.test(location.search.slice(1));
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', async () => {
-        try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=34', { scope: './' });
-          if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
-          navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
-          });
-        } catch (e) { console.warn('SW registration failed', e); }
-      });
+      if (disableSW) {
+        navigator.serviceWorker.getRegistrations().then(rs => { if (rs.length) rs.forEach(r => r.unregister()); });
+      } else {
+        window.addEventListener('load', async () => {
+          try {
+            const reg = await navigator.serviceWorker.register('./sw.js?v=36', { scope: './' });
+            if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
+            });
+          } catch (e) { console.warn('SW registration failed', e); }
+        });
+      }
     }
   })();
   </script>
