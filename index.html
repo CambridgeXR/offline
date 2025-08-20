@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=15">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=16">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=15" />
+  <link rel="manifest" href="./manifest.json?v=16" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body {
@@ -17,7 +17,7 @@
       overscroll-behavior: none;
     }
     #app { position:fixed; inset:0; overflow:hidden; z-index:0; }
-    canvas { display:block; width:100%; height:100%; }
+    canvas { display:block; width:100%; height:100%; background:#000; }
 
     /* UI sits above canvas and accepts pointer events */
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
@@ -29,7 +29,7 @@
       font-weight:700;
       letter-spacing:.2px;
       font-style: italic;
-      color:#3b82f6; /* BLUE so you know this build loaded */
+      color:#ef4444; /* RED so you know this build loaded */
     }
     .title { font-style: italic; color: var(--muted); font-size:.9rem; margin-top:.25rem; }
 
@@ -50,7 +50,7 @@
     /* File input: invisible (not display:none) for programmatic open on Android */
     #file { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
 
-    /* VR Controls overlay (shown on tap while in VR) */
+    /* VR Controls overlay (shown on tap in Cardboard VR) */
     #vrControls { position: fixed; inset: 0; pointer-events: none; z-index: 12; display:none; }
     #vrControls .panel {
       pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
@@ -82,14 +82,15 @@
 <body>
   <div id="app"></div>
 
-  <!-- Minimal UI -->
+  <!-- Main UI -->
   <div class="ui">
     <div id="ui" class="ui-inner fade visible">
       <h1 class="appTitle">VR Offline</h1>
       <button id="selectBtn" type="button">Select simulation</button>
       <button id="vrBtn" type="button" disabled>Enter VR</button>
       <button id="recenterBtn" type="button">Recenter</button>
-      <button id="installBtn" type="button" style="display:none;">Install App</button>
+      <!-- Always-visible Download button (PWA install) -->
+      <button id="installBtn" type="button">Download app</button>
       <div class="title">Brought to you by Cambridge XR</div>
     </div>
   </div>
@@ -97,7 +98,7 @@
   <!-- Hidden (but clickable) input for local video selection -->
   <input id="file" type="file" accept="video/*" />
 
-  <!-- VR overlays (shown in VR on tap) -->
+  <!-- VR overlays (Cardboard mode) -->
   <div id="vrControls">
     <div id="ipdPanel" class="panel">
       <div id="ipdLabel">IPD / Lens gap (Cardboard)</div>
@@ -131,7 +132,7 @@
       try { if (el.requestFullscreen) await el.requestFullscreen(); else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen(); } catch(e){}
     }
 
-    // Video (same flow you confirmed worked)
+    // Video element (same flow that worked for you)
     const video = document.createElement('video');
     video.setAttribute('playsinline','');
     video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
@@ -156,7 +157,7 @@
     const sphere = new THREE.Mesh(geometry, material);
     scene.add(sphere);
 
-    // Orientation controls — guard against errors
+    // Orientation controls
     let controls = null;
     try {
       if (THREE.DeviceOrientationControls) {
@@ -170,21 +171,18 @@
     let mode = 'mono'; // 'mono' | 'stereo' | 'webxr'
     const SMOOTH_ALPHA = 0.12;
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
+    let ipdGapPct = 0.0;   // 0..0.2 of screen width (slider 0..20)
+    camera.fov = 75; camera.updateProjectionMatrix();
 
-    // Stereo (Cardboard) params
-    let ipdGapPct = 0.0;                // 0..0.2 of screen width (slider 0..20)
-    camera.fov = 75; camera.updateProjectionMatrix(); // zoom slider controls this
-
-    // XR reference spaces
+    // XR ref space (for WebXR recenter)
     let xrBaseRefSpace = null;
 
     /* ----------------------- RECENTER ----------------------- */
     function recenter(){
       if (mode === 'webxr') {
-        // Preferred: offset XR reference space to create a new anchor
         const refBase = xrBaseRefSpace || (renderer.xr.getReferenceSpace && renderer.xr.getReferenceSpace());
-        if (refBase && window.XRRigidTransform) {
-          const xrCam = renderer.xr.getCamera(); // XR camera
+        if (refBase && window.XRRigidTransform && typeof refBase.getOffsetReferenceSpace === 'function') {
+          const xrCam = renderer.xr.getCamera();
           const euler = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
           const yaw = euler.y;
           const half = -yaw / 2; // inverse yaw
@@ -192,7 +190,7 @@
           const offsetRefSpace = refBase.getOffsetReferenceSpace(new XRRigidTransform(undefined, orientation));
           renderer.xr.setReferenceSpace(offsetRefSpace);
         } else {
-          // Fallback: rotate the sphere like your original
+          // Fallback: rotate sphere as in the original code
           const xrCam = renderer.xr.getCamera();
           const e = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
           sphere.rotation.y = -e.y;
@@ -289,7 +287,6 @@
     }
     document.addEventListener('pointerdown', globalTapHandler, { capture:true, passive:true });
     document.addEventListener('click',       globalTapHandler, { capture:true, passive:true });
-    // Start hidden after a short delay
     uiTimer = setTimeout(hideUI, 3000);
 
     // Buttons
@@ -299,39 +296,35 @@
     const installBtn  = document.getElementById('installBtn');
     const fileInput   = document.getElementById('file');
 
-    // Stop bubbling so a button press doesn't trigger the global handler twice
+    // Avoid double-triggering global handler
     ['pointerdown','click','touchstart'].forEach(evt => {
       for (const el of [selectBtn, vrBtn, recenterBtn, installBtn]) {
         el.addEventListener(evt, e => e.stopPropagation(), { passive:true });
       }
     });
 
-    // Select simulation: open file picker and enable VR when playing
+    // File selection -> start playback **inside change** (user gesture)
     selectBtn.addEventListener('click', () => {
-      showUI(); // keep controls visible after action
-      fileInput.value = ''; // allow re-select same file
+      showUI();
+      fileInput.value = '';
       if (fileInput.showPicker) { try { fileInput.showPicker(); return; } catch(e){} }
       fileInput.click();
     });
 
-    // Start playback directly inside the 'change' handler (user gesture)
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
-
       const url = URL.createObjectURL(file);
       startVideo(url);
     });
 
     function startVideo(src){
-      // Reset and set new source
       try { video.pause(); } catch {}
       video.removeAttribute('src'); video.srcObject = null; video.load();
-
       video.src = src;
       video.currentTime = 0;
 
-      // Try unmuted first, then muted fallback
+      // Try unmuted first, then muted fallback (matches the version that worked)
       video.muted = false;
       video.play().then(() => {
         vrBtn.disabled = false;
@@ -349,20 +342,18 @@
     const recenterVrBtn = document.getElementById('recenterVrBtn');
 
     function toggleVRControls(ev){
-      if (mode === 'mono') return;
-      // ignore taps on panels so sliders remain usable
+      if (mode !== 'stereo') return; // overlays are for Cardboard only
       if (ev && ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
       const show = (vrControls.style.display === 'none' || vrControls.style.display === '');
       vrControls.style.display = show ? 'block' : 'none';
-      const disableIPD = (mode === 'webxr');
-      ipdSlider.disabled = disableIPD;
-      ipdLabel.textContent = disableIPD ? 'IPD / Lens gap (controlled by headset)' : 'IPD / Lens gap (Cardboard)';
+      ipdSlider.disabled = false; // Cardboard only
+      ipdLabel.textContent = 'IPD / Lens gap (Cardboard)';
     }
 
-    // Show/hide sliders & recenter button on tap in VR
+    // Show/hide sliders & recenter button on tap (Cardboard VR)
     renderer.domElement.addEventListener('pointerdown', toggleVRControls);
 
-    // Also allow recenter from the VR overlay
+    // Recenter from overlay
     recenterVrBtn.addEventListener('click', (e) => { e.stopPropagation(); recenter(); });
 
     // Zoom (Cardboard only – adjusts camera FOV)
@@ -384,7 +375,7 @@
       await requestWakeLock();
       mode = 'stereo';
       showUI();
-      // Briefly show VR controls on enter
+      // Briefly show VR controls at entry
       vrControls.style.display = 'block';
       setTimeout(()=>{ if (mode==='stereo') vrControls.style.display = 'none'; }, 1200);
     }
@@ -397,13 +388,11 @@
         const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor','bounded-floor','local'] });
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
-
-        // Get and store a base reference space; recenter offsets are relative to this
         xrBaseRefSpace = await session.requestReferenceSpace('local');
         if (xrBaseRefSpace) renderer.xr.setReferenceSpace(xrBaseRefSpace);
 
-        // Make controller 'select' act as a recenter in WebXR (since HTML overlay isn’t visible in immersive mode)
-        session.addEventListener('select', () => { recenter(); });
+        // XR controller trigger -> recenter
+        session.addEventListener('select', recenter);
 
         renderer.setAnimationLoop(xrLoop);
         mode = 'webxr';
@@ -416,46 +405,32 @@
       const ok = await enterWebXR();
       if (!ok) await enterCardboard();
     }
-    const vrBtn = document.getElementById('vrBtn');
     vrBtn.addEventListener('click', enterVR);
 
-    // Recenter (top-level UI button)
-    const recenterBtn = document.getElementById('recenterBtn');
+    // Recenter from top-level UI
     recenterBtn.addEventListener('click', () => { showUI(); recenter(); });
 
-    // PWA install: show + auto-prompt on next tap after eligibility
-    const installBtn  = document.getElementById('installBtn');
+    /* ---------------------- Install / Download app ---------------------- */
     let deferredPrompt = null;
-    let autoPrompted = false;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      installBtn.style.display = 'block';
-      const auto = () => {
-        if (deferredPrompt && !autoPrompted) {
-          autoPrompted = true;
-          deferredPrompt.prompt();
-          deferredPrompt.userChoice.finally(() => {
-            deferredPrompt = null;
-            installBtn.style.display = 'none';
-          });
-        }
-        window.removeEventListener('pointerdown', auto, { capture:true });
-      };
-      window.addEventListener('pointerdown', auto, { once:true, capture:true });
-      showUI();
     });
 
     installBtn.addEventListener('click', async () => {
-      showUI();
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      try { await deferredPrompt.userChoice; } finally {
-        deferredPrompt = null;
-        installBtn.style.display = 'none';
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        try { await deferredPrompt.userChoice; } finally { deferredPrompt = null; }
+      } else {
+        // Fallback guidance when prompt isn't available (iOS/Safari/etc.)
+        const ua = navigator.userAgent || '';
+        if (/iPhone|iPad|iPod/i.test(ua)) {
+          alert('To install: tap Share, then "Add to Home Screen".');
+        } else {
+          alert('To install: open the browser menu and choose "Install App" (or "Add to Home Screen").');
+        }
       }
     });
-    window.addEventListener('appinstalled', () => { installBtn.style.display = 'none'; });
 
     // Drag & drop + gesture guard
     document.addEventListener('dragover', e => { e.preventDefault(); });
@@ -470,7 +445,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=15', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=16', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
