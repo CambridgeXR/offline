@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=23">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=24">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=23" />
+  <link rel="manifest" href="./manifest.json?v=24" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body {
@@ -29,7 +29,7 @@
       font-weight:700;
       letter-spacing:.2px;
       font-style: italic;
-      color:#22c55e; /* GREEN marker */
+      color:#ec4899; /* PINK marker */
     }
     .title { font-style: italic; color: var(--muted); font-size:.9rem; margin-top:.25rem; }
 
@@ -55,7 +55,7 @@
       z-index:11; display:none; padding:.7rem 1rem; border-radius:12px; background:var(--panel);
       border:1px solid #263044; font-weight:600; }
 
-    /* VR overlay (Cardboard) */
+    /* VR overlay (Cardboard only) */
     #vrControls { position: fixed; inset: 0; z-index: 12; display:none; pointer-events:none; }
     #vrControls .panel {
       pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
@@ -84,8 +84,8 @@
     <div id="ui" class="ui-inner fade visible">
       <h1 class="appTitle">VR Offline</h1>
       <button id="selectBtn" type="button">Select simulation</button>
-      <button id="vrBtn" type="button" disabled>Enter VR</button>
-      <button id="recenterBtn" type="button">Recenter</button>
+      <button id="vrBtn" type="button">Enter VR</button>
+      <!-- (Removed recenter from main screen as requested) -->
       <button id="installBtn" type="button">Download app</button>
       <div class="title">Brought to you by Cambridge XR</div>
     </div>
@@ -94,7 +94,7 @@
   <input id="file" type="file" accept="video/*" />
   <button id="tapPrompt" type="button">Tap to start video</button>
 
-  <!-- Cardboard overlay -->
+  <!-- Cardboard overlay (only shown in VR mode) -->
   <div id="vrControls">
     <div id="ipdPanel" class="panel">
       <div id="ipdLabel">IPD / Lens gap (Cardboard)</div>
@@ -118,7 +118,6 @@
     const app = document.getElementById('app');
     const selectBtn   = document.getElementById('selectBtn');
     const vrBtn       = document.getElementById('vrBtn');
-    const recenterBtn = document.getElementById('recenterBtn');
     const installBtn  = document.getElementById('installBtn');
     const fileInput   = document.getElementById('file');
     const tapPrompt   = document.getElementById('tapPrompt');
@@ -174,7 +173,7 @@
     function showUI(){ ui.classList.remove('hidden'); ui.classList.add('visible'); clearTimeout(uiTimer); uiTimer = setTimeout(hideUI, 2500); }
     function hideUI(){ ui.classList.remove('visible'); ui.classList.add('hidden'); }
     function globalTapHandler(e){
-      // IMPORTANT: In VR we do NOT steal taps; this avoids overlay conflicts
+      // In VR we DO NOT steal taps; this avoids overlay conflicts
       if (mode === 'stereo') return;
       const onUI = e.target.closest('#ui');
       if (!onUI) { showUI(); if (video.src && video.paused) video.play().catch(()=>{}); }
@@ -188,7 +187,7 @@
     function hideTap(){ tapPrompt.style.display = 'none'; }
     tapPrompt.addEventListener('click', () => {
       video.muted = true;
-      video.play().then(() => { hideTap(); vrBtn.disabled = false; }).catch(()=>{});
+      video.play().then(() => { hideTap(); }).catch(()=>{});
     });
 
     // File selection -> start playback inside change (user gesture)
@@ -214,14 +213,11 @@
       video.muted = false;
       const p = video.play();
       if (p && typeof p.catch === 'function') {
-        p.then(() => { hideTap(); vrBtn.disabled = false; })
+        p.then(() => { hideTap(); })
          .catch(() => {
             video.muted = true;
-            video.play().then(() => { hideTap(); vrBtn.disabled = false; })
-              .catch(() => { showTap(); });
+            video.play().then(() => { hideTap(); }).catch(() => { showTap(); });
          });
-      } else {
-        vrBtn.disabled = false;
       }
     });
 
@@ -230,7 +226,6 @@
       const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       yawOffset = e.y; snapNextFrame = true;
     }
-    recenterBtn.addEventListener('click', () => { showUI(); recenter(); });
 
     // Overlay elements
     const vrControls = document.getElementById('vrControls');
@@ -243,14 +238,13 @@
       vrControls.style.display = overlayVisible ? 'block' : 'none';
     }
 
-    // Cardboard: tap anywhere on canvas/document to toggle overlay
+    // Cardboard: tap anywhere on canvas/document to toggle overlay (VR only)
     function toggleCardboardOverlay(ev){
       if (mode !== 'stereo') return;
       // ignore taps on panels so sliders/buttons are usable
       if (ev && ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
       showOverlay(!overlayVisible);
     }
-    // Attach to both to be extra reliable
     renderer.domElement.addEventListener('pointerdown', toggleCardboardOverlay, { capture:true });
     document.addEventListener('pointerdown', toggleCardboardOverlay, { capture:true });
 
@@ -311,13 +305,12 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Enter VR -> Cardboard only
+    // Enter VR -> Cardboard only (always allowed)
     async function enterCardboard(){
       await goFullscreen();
       try { await screen.orientation.lock('landscape'); } catch {}
       await requestWakeLock();
       mode = 'stereo';
-      showUI();
       showOverlay(true);
       setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1200);
     }
@@ -347,7 +340,7 @@
         currentObjectURL = URL.createObjectURL(file);
         try { video.pause(); } catch{} video.removeAttribute('src'); video.srcObject=null; video.load();
         video.src = currentObjectURL; video.muted = true;
-        video.play().then(()=>{ vrBtn.disabled=false; hideTap(); }).catch(()=>{ showTap(); });
+        video.play().then(()=>{ hideTap(); }).catch(()=>{ showTap(); });
       }
     });
     window.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive:false });
@@ -356,7 +349,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=23', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=24', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
