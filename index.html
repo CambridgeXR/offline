@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=16">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=17">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=16" />
+  <link rel="manifest" href="./manifest.json?v=17" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body {
@@ -29,7 +29,7 @@
       font-weight:700;
       letter-spacing:.2px;
       font-style: italic;
-      color:#ef4444; /* RED so you know this build loaded */
+      color:#22c55e; /* GREEN build marker */
     }
     .title { font-style: italic; color: var(--muted); font-size:.9rem; margin-top:.25rem; }
 
@@ -47,10 +47,10 @@
     .visible { opacity:1; transform: translateY(0); }
     .fade { transition: opacity .25s ease, transform .25s ease; }
 
-    /* File input: invisible (not display:none) for programmatic open on Android */
+    /* File input: invisible (not display:none) so we can .click() it */
     #file { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
 
-    /* VR Controls overlay (shown on tap in Cardboard VR) */
+    /* VR Controls overlay (Cardboard VR) toggled on tap */
     #vrControls { position: fixed; inset: 0; pointer-events: none; z-index: 12; display:none; }
     #vrControls .panel {
       pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
@@ -89,7 +89,6 @@
       <button id="selectBtn" type="button">Select simulation</button>
       <button id="vrBtn" type="button" disabled>Enter VR</button>
       <button id="recenterBtn" type="button">Recenter</button>
-      <!-- Always-visible Download button (PWA install) -->
       <button id="installBtn" type="button">Download app</button>
       <div class="title">Brought to you by Cambridge XR</div>
     </div>
@@ -177,10 +176,13 @@
     // XR ref space (for WebXR recenter)
     let xrBaseRefSpace = null;
 
+    // One-frame snap flag (to avoid smoothing when recentering in Cardboard)
+    let snapNextFrame = false;
+
     /* ----------------------- RECENTER ----------------------- */
     function recenter(){
       if (mode === 'webxr') {
-        const refBase = xrBaseRefSpace || (renderer.xr.getReferenceSpace && renderer.xr.getReferenceSpace());
+        const refBase = xrBaseRefSpace || (renderer.xr.getReferenceSpace && renderer.xr.getReferenceSpace && renderer.xr.getReferenceSpace());
         if (refBase && window.XRRigidTransform && typeof refBase.getOffsetReferenceSpace === 'function') {
           const xrCam = renderer.xr.getCamera();
           const euler = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
@@ -189,8 +191,10 @@
           const orientation = new DOMPointReadOnly(0, Math.sin(half), 0, Math.cos(half));
           const offsetRefSpace = refBase.getOffsetReferenceSpace(new XRRigidTransform(undefined, orientation));
           renderer.xr.setReferenceSpace(offsetRefSpace);
+          // ensure sphere rotation is neutral if fallback was used earlier
+          sphere.rotation.y = 0;
         } else {
-          // Fallback: rotate sphere as in the original code
+          // Fallback: rotate sphere like original approach
           const xrCam = renderer.xr.getCamera();
           const e = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
           sphere.rotation.y = -e.y;
@@ -198,6 +202,7 @@
       } else {
         const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
         yawOffset = euler.y;
+        snapNextFrame = true; // snap instantly on next frame (no smoothing slerp)
       }
     }
 
@@ -207,8 +212,16 @@
       const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       euler.y -= yawOffset;
       const targetQuat = new THREE.Quaternion().setFromEuler(euler);
-      smoothedQuat.slerp(targetQuat, SMOOTH_ALPHA);
-      camera.quaternion.copy(smoothedQuat);
+
+      if (snapNextFrame) {
+        camera.quaternion.copy(targetQuat);
+        smoothedQuat.copy(targetQuat);
+        snapNextFrame = false;
+      } else {
+        smoothedQuat.slerp(targetQuat, SMOOTH_ALPHA);
+        camera.quaternion.copy(smoothedQuat);
+      }
+
       renderer.setScissorTest(false);
       renderer.render(scene, camera);
     }
@@ -218,8 +231,15 @@
       const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
       euler.y -= yawOffset;
       const targetQuat = new THREE.Quaternion().setFromEuler(euler);
-      smoothedQuat.slerp(targetQuat, SMOOTH_ALPHA);
-      camera.quaternion.copy(smoothedQuat);
+
+      if (snapNextFrame) {
+        camera.quaternion.copy(targetQuat);
+        smoothedQuat.copy(targetQuat);
+        snapNextFrame = false;
+      } else {
+        smoothedQuat.slerp(targetQuat, SMOOTH_ALPHA);
+        camera.quaternion.copy(smoothedQuat);
+      }
 
       const w = renderer.domElement.width | 0, h = renderer.domElement.height | 0;
       const half = w / 2;
@@ -324,7 +344,7 @@
       video.src = src;
       video.currentTime = 0;
 
-      // Try unmuted first, then muted fallback (matches the version that worked)
+      // Try unmuted first, then muted fallback
       video.muted = false;
       video.play().then(() => {
         vrBtn.disabled = false;
@@ -334,7 +354,7 @@
       });
     }
 
-    /* --------------------- VR overlays & actions --------------------- */
+    /* --------------------- VR overlays & actions (Cardboard) --------------------- */
     const vrControls = document.getElementById('vrControls');
     const ipdSlider  = document.getElementById('ipd');
     const ipdLabel   = document.getElementById('ipdLabel');
@@ -342,16 +362,19 @@
     const recenterVrBtn = document.getElementById('recenterVrBtn');
 
     function toggleVRControls(ev){
-      if (mode !== 'stereo') return; // overlays are for Cardboard only
+      if (mode !== 'stereo') return; // overlays for Cardboard mode
+      // Ignore taps directly on overlay panels
       if (ev && ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
       const show = (vrControls.style.display === 'none' || vrControls.style.display === '');
       vrControls.style.display = show ? 'block' : 'none';
-      ipdSlider.disabled = false; // Cardboard only
+      ipdSlider.disabled = false;
       ipdLabel.textContent = 'IPD / Lens gap (Cardboard)';
     }
 
-    // Show/hide sliders & recenter button on tap (Cardboard VR)
-    renderer.domElement.addEventListener('pointerdown', toggleVRControls);
+    // Toggle overlay on ANY tap while in Cardboard VR (use capture to be safe)
+    document.addEventListener('pointerdown', (ev) => {
+      if (mode === 'stereo') toggleVRControls(ev);
+    }, { capture:true });
 
     // Recenter from overlay
     recenterVrBtn.addEventListener('click', (e) => { e.stopPropagation(); recenter(); });
@@ -375,7 +398,7 @@
       await requestWakeLock();
       mode = 'stereo';
       showUI();
-      // Briefly show VR controls at entry
+      // Show VR controls briefly on entry
       vrControls.style.display = 'block';
       setTimeout(()=>{ if (mode==='stereo') vrControls.style.display = 'none'; }, 1200);
     }
@@ -405,24 +428,22 @@
       const ok = await enterWebXR();
       if (!ok) await enterCardboard();
     }
+    const vrBtn = document.getElementById('vrBtn');
     vrBtn.addEventListener('click', enterVR);
 
     // Recenter from top-level UI
+    const recenterBtn = document.getElementById('recenterBtn');
     recenterBtn.addEventListener('click', () => { showUI(); recenter(); });
 
     /* ---------------------- Install / Download app ---------------------- */
+    const installBtn  = document.getElementById('installBtn');
     let deferredPrompt = null;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-    });
-
+    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
     installBtn.addEventListener('click', async () => {
       if (deferredPrompt) {
         deferredPrompt.prompt();
         try { await deferredPrompt.userChoice; } finally { deferredPrompt = null; }
       } else {
-        // Fallback guidance when prompt isn't available (iOS/Safari/etc.)
         const ua = navigator.userAgent || '';
         if (/iPhone|iPad|iPod/i.test(ua)) {
           alert('To install: tap Share, then "Add to Home Screen".');
@@ -445,7 +466,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=16', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=17', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
