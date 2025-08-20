@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '24';
+const VERSION = '25';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
@@ -38,7 +38,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
 
   // Bypass media/byte-range and blob/filesystem requests
-  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:')) {
+  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
     return;
   }
 
@@ -49,7 +49,6 @@ self.addEventListener('fetch', (event) => {
     (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
 
   if (isScopeIndex) {
-    // Network-first for index; cache fallback
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: 'no-store' });
