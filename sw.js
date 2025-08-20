@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '36';
+const VERSION = '38';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
@@ -42,7 +42,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Treat scope root (e.g. /offline/) as the app index
+  // Treat the scope root (e.g. /offline/) as the app index
   const scopePath = new URL(self.registration.scope).pathname; // e.g., "/offline/"
   const isScopeIndex =
     url.origin === location.origin &&
