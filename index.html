@@ -17,10 +17,11 @@
     }
     #app, canvas { width:100%; height:100%; display:block; }
     .ui {
-      position: fixed; inset: 0; display: grid; place-items: center; pointer-events:none;
+      position: fixed; inset: 0; display: grid; place-items: center;
+      z-index: 10; /* ensure on top and clickable */
+      /* pointer-events was blocking clicks; keep it clickable */
     }
     .ui-inner {
-      pointer-events:auto;
       display:flex; flex-direction:column; align-items:center; gap:12px;
       padding:16px 18px; border-radius:14px; background:rgba(11,15,25,.65); backdrop-filter: blur(6px);
       box-shadow: 0 6px 24px rgba(0,0,0,.35);
@@ -29,6 +30,7 @@
     .fade { opacity:0; transform: translateY(6px); transition:opacity .25s ease, transform .25s ease; }
     .fade.visible { opacity:1; transform: translateY(0); }
     h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: .2px; }
+    .appTitle, .title { font-style: italic; } /* make title/subtitle italic */
     .title { font-size: 12px; color: var(--muted); margin-top: 4px; }
     button {
       -webkit-tap-highlight-color: transparent;
@@ -36,7 +38,8 @@
       font-size: 14px; font-weight: 600; letter-spacing: .2px; cursor: pointer; min-width: 200px;
     }
     button[disabled] { opacity: .5; cursor: not-allowed; }
-    #recenterBtn { min-width: 140px; }
+    /* Recenter button should match others */
+    #recenterBtn { min-width: 200px; }
     /* File input: invisible (not display:none) for programmatic open on Android */
     #file { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
   </style>
@@ -103,7 +106,7 @@
     }
     buildSphere();
 
-    // Basic lights (not really needed for video texture, but harmless)
+    // Basic lights
     scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
     // Device orientation (Cardboard/mono fallback)
@@ -122,35 +125,26 @@
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
 
     /* =======================================================================
-       RECENTER (UPDATED):
-       - WebXR: offset the XR reference space so the current facing becomes forward
-       - Mono/Stereo: preserve existing yawOffset approach
+       RECENTER (WebXR-safe + legacy fallback)
        ======================================================================= */
     function recenter(){
       if (mode === 'webxr') {
-        // Recenter by offsetting the XR reference space based on current yaw.
-        const session = renderer.xr.getSession && renderer.xr.getSession();
         const refSpace = renderer.xr.getReferenceSpace && renderer.xr.getReferenceSpace();
-        if (!session || !refSpace) {
-          // Fallback to previous behavior if reference space isn't available
+        if (refSpace) {
+          // Use the XR camera’s current yaw to create an inverse offset.
           const xrCam = renderer.xr.getCamera();
           const euler = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
-          sphere.rotation.y = -euler.y;
-          return;
+          const yaw = euler.y;
+          const half = -yaw / 2; // inverse
+          const orientation = new DOMPointReadOnly(0, Math.sin(half), 0, Math.cos(half));
+          const offsetRefSpace = refSpace.getOffsetReferenceSpace(new XRRigidTransform(undefined, orientation));
+          renderer.xr.setReferenceSpace(offsetRefSpace);
         }
-        const xrCam = renderer.xr.getCamera();
-        const euler = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
-        const yaw = euler.y;
-
-        // Build inverse yaw rotation as an XRRigidTransform orientation
-        const half = -yaw / 2;
-        const orientation = new DOMPointReadOnly(0, Math.sin(half), 0, Math.cos(half));
-        const offsetRefSpace = refSpace.getOffsetReferenceSpace(new XRRigidTransform(undefined, orientation));
-        renderer.xr.setReferenceSpace(offsetRefSpace);
-      } else {
-        const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
-        yawOffset = euler.y;
+        return;
       }
+      // Cardboard/mono path: keep existing yaw-offset approach
+      const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+      yawOffset = euler.y;
     }
 
     function renderMono(){
@@ -183,7 +177,7 @@
     function stereoLoop(){ renderStereo(); }
     function xrLoop(){ renderer.render(scene, camera); }
 
-    // Video selection: local file or remote URL
+    // Video selection: local file
     function showUI(){ requestAnimationFrame(()=>uiRoot.classList.add('visible')); }
     function hideUI(){ uiRoot.classList.remove('visible'); }
 
@@ -224,6 +218,7 @@
       try { await screen.orientation.lock('landscape'); } catch {}
       await requestWakeLock();
       mode = 'stereo';
+      renderer.setAnimationLoop(stereoLoop);
       showUI();
     }
     async function enterWebXR(){
@@ -248,14 +243,13 @@
     // Recenter
     recenterBtn.addEventListener('click', () => { showUI(); recenter(); });
 
-    // PWA install: show + auto-prompt on next tap after eligibility
+    // PWA install
     let deferredPrompt = null;
     let autoPrompted = false;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
       installBtn.style.display = 'block';
-      // Auto prompt on next user interaction (required gesture)
       const auto = () => {
         if (deferredPrompt && !autoPrompted) {
           autoPrompted = true;
@@ -294,7 +288,7 @@
       }
     }, { once: true });
 
-    // Service worker registration (kept as-is)
+    // Service worker registration
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
