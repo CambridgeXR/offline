@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = '20';
+const VERSION = '23';
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
 const APP_SHELL = [
@@ -37,37 +37,39 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Don't touch blob/fileSystem or byte-range requests (local media)
+  // Bypass media/byte-range and blob/filesystem requests
   if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
     return;
   }
 
-  // Treat the scope root (e.g. /offline/) as index
-  const scopePath = new URL(self.registration.scope).pathname; // "/offline/"
-  const isScopeIndex = url.origin === location.origin &&
-                       (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
+  // Treat the scope root (e.g. /offline/) as the app index
+  const scopePath = new URL(self.registration.scope).pathname; // e.g. "/offline/"
+  const isScopeIndex =
+    url.origin === location.origin &&
+    (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
 
   if (isScopeIndex) {
+    // Network-first for index; cache fallback
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: 'no-store' });
         const cache = await caches.open(CACHE);
-        const rootURL  = new URL(scopePath, self.location.origin).toString();
+        const rootURL = new URL(scopePath, self.location.origin).toString();
         const indexURL = new URL(scopePath + 'index.html', self.location.origin).toString();
         await cache.put(rootURL, fresh.clone());
         await cache.put(indexURL, fresh.clone());
         return fresh;
       } catch {
         const cache = await caches.open(CACHE);
-        return (await cache.match(new URL(scopePath, self.location.origin))) ||
-               (await cache.match(new URL(scopePath + 'index.html', self.location.origin))) ||
-               Response.error();
+        const cachedRoot  = await cache.match(new URL(scopePath, self.location.origin));
+        const cachedIndex = await cache.match(new URL(scopePath + 'index.html', self.location.origin));
+        return cachedRoot || cachedIndex || Response.error();
       }
     })());
     return;
   }
 
-  // Same-origin static: cache-first
+  // Same-origin static assets: cache-first
   if (url.origin === location.origin) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
