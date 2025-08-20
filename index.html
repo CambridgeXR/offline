@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=33">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=34">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=33" />
+  <link rel="manifest" href="./manifest.json?v=34" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
@@ -21,7 +21,7 @@
     .ui { position:fixed; inset:0; display:grid; place-items:center; z-index:10; pointer-events:auto; }
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style:italic; color:#ffffff; } /* WHITE */
+      font-style:italic; color:#a855f7; } /* PURPLE */
     .title { font-style:italic; color:var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -134,7 +134,7 @@
       return true;
     }
 
-    // THREE scene
+    // Scene
     const scene    = new THREE.Scene();
     const camera   = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
@@ -143,7 +143,7 @@
     renderer.xr.enabled = false; // Cardboard only
     app.appendChild(renderer.domElement);
 
-    // Video on sphere
+    // Video -> sphere
     const video = document.createElement('video');
     video.setAttribute('playsinline',''); video.playsInline = true; video.loop = true; video.preload = 'metadata'; video.crossOrigin = 'anonymous';
     const geom = new THREE.SphereGeometry(500, 64, 64); geom.scale(-1,1,1);
@@ -160,7 +160,7 @@
     let mode = 'mono'; // 'mono' | 'stereo'
     const SMOOTH_ALPHA = 0.12;
     const smoothedQuat = new THREE.Quaternion().copy(camera.quaternion);
-    let ipdGapPct = 0.0; // 0..0.2 (1..10 maps)
+    let ipdGapPct = 0.0; // 0..0.2 (slider 1..10)
     let snapNextFrame = false;
     let currentObjectURL = null;
 
@@ -199,7 +199,7 @@
       }
     });
 
-    // Install (Download app)
+    // Download app / PWA
     let deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; });
     installBtn.addEventListener('click', async () => {
@@ -238,16 +238,16 @@
       showOverlay(vrControls.style.display!=='block');
     });
 
-    // Sizing helpers
+    // Size helpers
     function forceResize(){
       const w = window.innerWidth, h = window.innerHeight;
       renderer.setSize(w, h); camera.aspect = w/h; camera.updateProjectionMatrix();
     }
     window.addEventListener('resize', forceResize);
-    window.addEventListener('orientationchange', () => { setTimeout(()=>{ forceResize(); }, 120); });
-    document.addEventListener('fullscreenchange', () => { setTimeout(()=>{ forceResize(); }, 120); });
+    window.addEventListener('orientationchange', () => setTimeout(forceResize, 120));
+    document.addEventListener('fullscreenchange', () => setTimeout(forceResize, 120));
 
-    // Buffer size helper (rock-solid)
+    // Buffer size helper
     function getBufferSize(){
       try {
         const gl = renderer.getContext();
@@ -304,26 +304,27 @@
     function animate(){ requestAnimationFrame(animate); (mode==='stereo') ? renderStereo() : renderMono(); }
     animate();
 
-    // ENTER VR — rock-solid: immediate stereo + repeated resizes
-    function enterVR(){
-      // 1) Flip now so next frame splits
+    // ENTER VR — Cardboard only, with iOS motion permission
+    async function enterVR(){
+      // 1) Ask for motion permission on iOS inside this gesture
+      await ensureOrientationPermission();
+
+      // 2) Fullscreen / orientation / wakelock (best effort, but not required for split)
+      await goFullscreen();
+      try { await screen.orientation.lock('landscape'); } catch(e){}
+      await requestWakeLock();
+
+      // 3) Flip to stereo and size
       mode = 'stereo';
       ui.classList.add('hidden');
       forceResize();
       showOverlay(true);
       setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1000);
 
-      // 2) In parallel: permissions + fullscreen + orientation + wakelock
-      ensureOrientationPermission().then(()=>{ try { controls && controls.connect(); } catch{} }).catch(()=>{});
-      goFullscreen();
-      try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e){}
-      requestWakeLock();
-
-      // 3) Multiple post-entry resizes to catch late size changes
-      const bumps = [80, 160, 320, 640];
-      bumps.forEach(t => setTimeout(forceResize, t));
+      // 4) Extra resizes to catch late changes
+      [80, 160, 320, 640].forEach(t => setTimeout(forceResize, t));
     }
-    vrBtn.addEventListener('click', enterVR);
+    vrBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); enterVR(); });
 
     // Drag & drop + gesture guard
     document.addEventListener('dragover', e => e.preventDefault());
@@ -344,7 +345,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=33', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=34', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
