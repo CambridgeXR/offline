@@ -15,19 +15,18 @@ const APP_SHELL = [
 ].map(url => `${url}${url.includes('?') ? '&' : '?'}v=${VERSION}`);
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(APP_SHELL);
+    self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    try { await self.registration.navigationPreload?.enable(); } catch {}
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k !== CACHE ? caches.delete(k) : null)));
-    await self.clients.claim();
+    await Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : Promise.resolve())));
+    self.clients.claim();
   })());
 });
 
@@ -39,15 +38,11 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  if (req.method !== 'GET') return;
-
-  // Navigations: network-first with offline fallback
-  if (req.mode === 'navigate') {
+  // App shell: network-first for index with offline fallback
+  if (url.origin === location.origin && (url.pathname === '/' || url.pathname.endsWith('/index.html'))) {
     event.respondWith((async () => {
       try {
-        const preload = await event.preloadResponse;
-        if (preload) return preload;
-        const fresh = await fetch(req);
+        const fresh = await fetch(req, { cache: 'no-store' });
         const cache = await caches.open(CACHE);
         cache.put('./', fresh.clone());
         return fresh;
@@ -64,7 +59,7 @@ self.addEventListener('fetch', (event) => {
 
   // Don't intercept byte-range/media or blob/filesystem requests (video/local)
   if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
-    return;
+    return; // allow default handling
   }
 
   // Same-origin static assets: cache-first
