@@ -6,13 +6,14 @@
   <meta name="theme-color" content="#0b0f19" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=19">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=20">
   <title>VR Offline</title>
-  <link rel="manifest" href="./manifest.json?v=19" />
+  <link rel="manifest" href="./manifest.json?v=20" />
   <style>
     :root { --bg:#0b0f19; --fg:#e5e7eb; --muted:#9aa3b2; --panel: rgba(11,15,25,.65); }
     html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; overscroll-behavior: none; }
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+      overscroll-behavior: none; }
     #app { position:fixed; inset:0; overflow:hidden; z-index:0; }
     canvas { display:block; width:100%; height:100%; background:#000; }
 
@@ -20,7 +21,7 @@
     .ui-inner { display:flex; flex-direction:column; gap:.8rem; align-items:center; }
 
     h1.appTitle { margin:0 0 .35rem; font-size:1.5rem; font-weight:700; letter-spacing:.2px;
-      font-style: italic; color:#3b82f6; } /* BLUE marker */
+      font-style: italic; color:#f97316; } /* ORANGE marker */
     .title { font-style: italic; color: var(--muted); font-size:.9rem; margin-top:.25rem; }
 
     button { appearance:none; border:0; padding:1rem 1.2rem; border-radius:1rem;
@@ -34,18 +35,23 @@
     .visible { opacity:1; transform: translateY(0); }
     .fade { transition: opacity .25s ease, transform .25s ease; }
 
-    /* File input kept visible to the DOM (not display:none) */
     #file { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
 
-    /* Tap-to-start if autoplay still blocked after our attempts */
     #tapPrompt { position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
       z-index:11; display:none; padding:.7rem 1rem; border-radius:12px; background:var(--panel);
       border:1px solid #263044; font-weight:600; }
 
-    /* VR Controls overlay (Cardboard) */
-    #vrControls { position: fixed; inset: 0; pointer-events: none; z-index: 12; display:none; }
-    #vrControls .panel { pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
-      box-shadow:0 6px 24px rgba(0,0,0,.35); backdrop-filter: blur(6px); }
+    /* VR overlay */
+    #vrControls { position: fixed; inset: 0; z-index: 12; display:none; }
+    /* Cardboard: let taps pass through background, panels handle input */
+    #vrControls.cardboard { pointer-events: none; }
+    /* WebXR DOM Overlay: we WANT to receive taps */
+    #vrControls.webxr { pointer-events: auto; background: transparent; }
+
+    #vrControls .panel {
+      pointer-events:auto; background:var(--panel); border:1px solid #263044; border-radius:12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.35); backdrop-filter: blur(6px);
+    }
 
     /* Top horizontal (IPD) */
     #ipdPanel { position:absolute; left:50%; top:8px; transform:translateX(-50%); padding:8px 10px; }
@@ -59,7 +65,7 @@
     #zoom { writing-mode: bt-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical;
       height:40vh; max-height:360px; }
 
-    /* Bottom center action bar with Recenter (in VR overlay) */
+    /* Bottom center action bar with Recenter (in overlay) */
     #actionBar { position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
       padding:8px 10px; display:flex; gap:10px; align-items:center; justify-content:center; }
     #recenterVrBtn { width:auto; padding:.8rem 1.1rem; }
@@ -83,8 +89,8 @@
   <input id="file" type="file" accept="video/*" />
   <button id="tapPrompt" type="button">Tap to start video</button>
 
-  <!-- VR overlays (Cardboard mode) -->
-  <div id="vrControls">
+  <!-- VR overlays (Cardboard + WebXR DOM Overlay) -->
+  <div id="vrControls" class="cardboard">
     <div id="ipdPanel" class="panel">
       <div id="ipdLabel">IPD / Lens gap (Cardboard)</div>
       <input id="ipd" type="range" min="0" max="20" value="0" />
@@ -155,6 +161,7 @@
     let xrBaseRefSpace = null;
     let snapNextFrame = false;
     let currentObjectURL = null;
+    let overlayVisible = false;
 
     // UI show/hide
     const ui = document.getElementById('ui'); let uiTimer = null;
@@ -188,18 +195,14 @@
       const file = e.target.files && e.target.files[0];
       if (!file) return;
 
-      // Revoke old blob URL if any
       if (currentObjectURL) { try { URL.revokeObjectURL(currentObjectURL); } catch{} currentObjectURL = null; }
-
       currentObjectURL = URL.createObjectURL(file);
 
-      // Reset video fully, then set src
       try { video.pause(); } catch {}
       video.removeAttribute('src'); video.srcObject = null; video.load();
       video.src = currentObjectURL;
       video.currentTime = 0;
 
-      // Try unmuted first; on failure try muted; if still blocked show tap prompt
       video.muted = false;
       const p = video.play();
       if (p && typeof p.catch === 'function') {
@@ -239,22 +242,37 @@
     }
     recenterBtn.addEventListener('click', () => { showUI(); recenter(); });
 
-    // VR overlays (Cardboard)
+    // Overlay elements
     const vrControls = document.getElementById('vrControls');
     const ipdSlider  = document.getElementById('ipd');
     const ipdLabel   = document.getElementById('ipdLabel');
     const zoomSlider = document.getElementById('zoom');
     const recenterVrBtn = document.getElementById('recenterVrBtn');
 
-    function toggleVRControls(ev){
+    function applyOverlayMode(){
+      if (mode === 'stereo') {
+        vrControls.classList.remove('webxr'); vrControls.classList.add('cardboard');
+        ipdSlider.disabled = false; ipdLabel.textContent = 'IPD / Lens gap (Cardboard)';
+      } else if (mode === 'webxr') {
+        vrControls.classList.remove('cardboard'); vrControls.classList.add('webxr');
+        ipdSlider.disabled = true;  ipdLabel.textContent = 'IPD / Lens gap (controlled by headset)';
+      }
+    }
+    function showOverlay(show){
+      overlayVisible = !!show;
+      vrControls.style.display = overlayVisible ? 'block' : 'none';
+      applyOverlayMode();
+    }
+
+    // Cardboard: tap anywhere to toggle overlay
+    function toggleCardboardOverlay(ev){
       if (mode !== 'stereo') return;
       if (ev && ev.composedPath && ev.composedPath().some(el => el && el.classList && el.classList.contains('panel'))) return;
-      const show = (vrControls.style.display === 'none' || vrControls.style.display === '');
-      vrControls.style.display = show ? 'block' : 'none';
-      ipdSlider.disabled = false;
-      ipdLabel.textContent = 'IPD / Lens gap (Cardboard)';
+      showOverlay(!overlayVisible);
     }
-    document.addEventListener('pointerdown', (ev) => { if (mode === 'stereo') toggleVRControls(ev); }, { capture:true });
+    document.addEventListener('pointerdown', toggleCardboardOverlay, { capture:true });
+
+    // Overlay controls
     recenterVrBtn.addEventListener('click', (e) => { e.stopPropagation(); recenter(); });
     zoomSlider.addEventListener('input', () => { camera.fov = parseFloat(zoomSlider.value); camera.updateProjectionMatrix(); });
     ipdSlider.addEventListener('input', () => { const v = parseInt(ipdSlider.value, 10); ipdGapPct = Math.min(0.2, Math.max(0, v / 100)); });
@@ -298,24 +316,41 @@
     // ENTER VR
     async function enterCardboard(){
       await goFullscreen(); try { await screen.orientation.lock('landscape'); } catch {}
-      await requestWakeLock(); mode='stereo'; showUI(); vrControls.style.display='block';
-      setTimeout(()=>{ if (mode==='stereo') vrControls.style.display='none'; }, 1200);
+      await requestWakeLock(); mode='stereo'; showUI();
+      showOverlay(true); setTimeout(()=>{ if (mode==='stereo') showOverlay(false); }, 1200);
     }
+
     async function enterWebXR(){
       try {
         const supported = await (navigator.xr && navigator.xr.isSessionSupported ? navigator.xr.isSessionSupported('immersive-vr') : Promise.resolve(false));
         if (!supported) return false;
-        const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor','bounded-floor','local'] });
+
+        const session = await navigator.xr.requestSession('immersive-vr', {
+          optionalFeatures: ['local-floor','bounded-floor','local','dom-overlay'],
+          domOverlay: { root: document.body } // enable HTML overlay in-headset
+        });
+
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
         xrBaseRefSpace = await session.requestReferenceSpace('local');
         if (xrBaseRefSpace) renderer.xr.setReferenceSpace(xrBaseRefSpace);
-        session.addEventListener('select', recenter); // controller trigger = recenter
+
+        // In WebXR, toggle overlay with controller/screen select
+        session.addEventListener('select', () => { showOverlay(!overlayVisible); });
+
         renderer.setAnimationLoop(xrLoop);
-        mode='webxr'; return true;
+        mode='webxr';
+        applyOverlayMode();
+        showOverlay(false); // start hidden
+        return true;
       } catch(e){ return false; }
     }
-    vrBtn.addEventListener('click', async () => { showUI(); const ok = await enterWebXR(); if (!ok) await enterCardboard(); });
+
+    vrBtn.addEventListener('click', async () => {
+      showUI();
+      const ok = await enterWebXR();
+      if (!ok) await enterCardboard();
+    });
 
     // INSTALL (Download app)
     let deferredPrompt = null;
@@ -349,7 +384,7 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const reg = await navigator.serviceWorker.register('./sw.js?v=19', { scope: './' });
+          const reg = await navigator.serviceWorker.register('./sw.js?v=20', { scope: './' });
           if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
           navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (!window.__reloaded) { window.__reloaded = true; location.reload(); }
