@@ -1,7 +1,8 @@
 // sw.js
-const VERSION = '40';
+const VERSION = '13'; // bump this for each deploy
 const CACHE = `vr-offline-cache-v${VERSION}`;
 
+// Precache the app shell (versioned)
 const APP_SHELL = [
   './',
   './?source=pwa',
@@ -14,18 +15,19 @@ const APP_SHELL = [
 ].map(url => `${url}${url.includes('?') ? '&' : '?'}v=${VERSION}`);
 
 self.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(CACHE);
-    await cache.addAll(APP_SHELL);
-    self.skipWaiting();
-  })());
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    try { await self.registration.navigationPreload?.enable(); } catch {}
     const keys = await caches.keys();
-    await Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : Promise.resolve())));
-    self.clients.claim();
+    await Promise.all(keys.map((k) => (k !== CACHE ? caches.delete(k) : null)));
+    await self.clients.claim();
   })());
 });
 
@@ -37,34 +39,31 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Bypass local media / range / blob / filesystem
-  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
-    return;
-  }
+  if (req.method !== 'GET') return;
 
-  // Treat scope root (e.g. /offline/) as the app index
-  const scopePath = new URL(self.registration.scope).pathname; // e.g., "/offline/"
-  const isScopeIndex =
-    url.origin === location.origin &&
-    (url.pathname === scopePath || url.pathname === scopePath + 'index.html');
-
-  if (isScopeIndex) {
+  // Navigations: network-first with offline fallback
+  if (req.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const fresh = await fetch(req, { cache: 'no-store' });
+        const preload = await event.preloadResponse;
+        if (preload) return preload;
+        const fresh = await fetch(req);
         const cache = await caches.open(CACHE);
-        const rootURL  = new URL(scopePath, self.location.origin).toString();
-        const indexURL = new URL(scopePath + 'index.html', self.location.origin).toString();
-        await cache.put(rootURL, fresh.clone());
-        await cache.put(indexURL, fresh.clone());
+        cache.put('./', fresh.clone());
         return fresh;
       } catch {
         const cache = await caches.open(CACHE);
-        const cachedRoot  = await cache.match(new URL(scopePath, self.location.origin));
-        const cachedIndex = await cache.match(new URL(scopePath + 'index.html', self.location.origin));
-        return cachedRoot || cachedIndex || Response.error();
+        return (await cache.match('./')) ||
+               (await cache.match('./index.html')) ||
+               (await cache.match('/index.html')) ||
+               Response.error();
       }
     })());
+    return;
+  }
+
+  // Don't intercept byte-range/media or blob/filesystem requests (video/local)
+  if (req.headers.has('range') || url.protocol === 'blob:' || url.protocol === 'filesystem:') {
     return;
   }
 
@@ -81,7 +80,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // CDN: stale-while-revalidate
+  // CDN (e.g., jsDelivr): stale-while-revalidate
   if (url.hostname.endsWith('cdn.jsdelivr.net')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
